@@ -57,7 +57,7 @@ cashflow/
 ```toml
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "cashflow"
@@ -115,6 +115,7 @@ def db():
 
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     create_schema(conn)
     yield conn
     conn.close()
@@ -146,6 +147,7 @@ git commit -m "chore: scaffold cashflow project with Click CLI entry point"
 ```python
 # tests/test_db.py
 import sqlite3
+import pytest
 from cashflow.db import create_schema, get_connection
 
 
@@ -238,9 +240,6 @@ def test_canonical_id_self_reference():
     ).fetchall()
     assert len(rows) == 1
     conn.close()
-
-
-import pytest
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -276,14 +275,14 @@ def create_schema(conn: sqlite3.Connection) -> None:
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS categories (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     parent_id INTEGER REFERENCES categories(id),
     type TEXT NOT NULL CHECK (type IN ('necessity', 'want'))
 );
 
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     type TEXT NOT NULL CHECK (type IN ('credit', 'debit', 'cash')),
     institution TEXT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT 1
@@ -351,7 +350,7 @@ CREATE TABLE IF NOT EXISTS income (
 
 CREATE TABLE IF NOT EXISTS goals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
+    name TEXT NOT NULL UNIQUE,
     type TEXT NOT NULL CHECK (type IN ('ceiling', 'surplus', 'sinking', 'invest')),
     amount REAL NOT NULL,
     period TEXT CHECK (period IN ('monthly', 'yearly')),
@@ -1231,14 +1230,13 @@ def test_status_command_runs(tmp_path):
     """Status command should run and show ceiling + surplus info."""
     db_path = tmp_path / "test.db"
     runner = CliRunner()
-    result = runner.invoke(cli, ["status", "--db", str(db_path)])
+    result = runner.invoke(cli, ["--db", str(db_path), "status"])
     assert result.exit_code == 0
     assert "ceiling" in result.output.lower() or "$" in result.output
 
 
 def test_ingest_then_status(tmp_path):
     """Ingest a CSV then check status reflects the data."""
-    import shutil
     from pathlib import Path
 
     db_path = tmp_path / "test.db"
@@ -1247,13 +1245,13 @@ def test_ingest_then_status(tmp_path):
 
     # Ingest
     result = runner.invoke(
-        cli, ["ingest", "--files", str(fixture), "--db", str(db_path)]
+        cli, ["--db", str(db_path), "ingest", "--files", str(fixture)]
     )
     assert result.exit_code == 0
     assert "new transactions" in result.output
 
     # Status
-    result = runner.invoke(cli, ["status", "--db", str(db_path)])
+    result = runner.invoke(cli, ["--db", str(db_path), "status"])
     assert result.exit_code == 0
     assert "$" in result.output
 ```
