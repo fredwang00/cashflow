@@ -859,13 +859,216 @@ git commit -m "feat: Amazon order ingestion and reconciliation in CLI"
 
 ---
 
+## Chunk 4: Target Card CSV Parser
+
+### Task 5: Target Card CSV Parser
+
+Target RedCard CSVs have a clean format:
+```
+"Transaction Date","Posting Date","Ref#","Amount","Description","Last 4 of Card/Account","Transaction Type"
+"2026-03-11","2026-03-11","0541019ENP4D71P93","66.43","TARGET  00027706  VIRGINIA BEACVA","**2410","Sale"
+```
+
+Key differences from Chase:
+- Dates are ISO format (`YYYY-MM-DD`)
+- Amounts are **positive for purchases** (same as our spec convention — no sign flip needed)
+- Negative amounts for payments and returns
+- Transaction Type: `Sale`, `Payment`, `Return`
+- Descriptions are all "TARGET" with store numbers — no item-level detail
+- Multiple card numbers (`**2410`, `**9147`) on the same account
+- Files are named `Transactions.CSV`, `Transactions (1).CSV`, etc.
+
+**Files:**
+- Create: `src/cashflow/parsers/target.py`
+- Create: `tests/test_target_parser.py`
+- Create: `tests/fixtures/target_sample.csv`
+- Modify: `src/cashflow/cli.py` (add target parser to ingest)
+
+- [ ] **Step 1: Create Target CSV fixture**
+
+Create `tests/fixtures/target_sample.csv`:
+```csv
+"Transaction Date","Posting Date","Ref#","Amount","Description","Last 4 of Card/Account","Transaction Type"
+"2026-03-11","2026-03-11","0541019ENP4D71P93","66.43","TARGET        00027706   VIRGINIA BEACVA","**2410","Sale"
+"2026-02-28","2026-02-28","0541019EBP4DAT0Q7","16.95","TARGET        00022038   CHESAPEAKE   VA","**2410","Sale"
+"2026-01-19","2026-01-19","89261008600XV713D","-197.56","AUTO PAYMENT - THANKS    *            MN","","Payment"
+"2026-01-08","2026-01-08","0541019QRP4DBDKKZ","326.27","TARGET        00027706   VIRGINIA BEACVA","**2410","Sale"
+"2025-12-23","2025-12-23","054101981P4D6SS9G","-12.48","TARGET        00027706 VIRGINIA B CREDIT","","Return"
+"2025-12-23","2025-12-23","0541019B5P4DBJ4YM","241.65","TARGET        00027706   VIRGINIA BEACVA","**2410","Sale"
+```
+
+- [ ] **Step 2: Write failing tests**
+
+```python
+# tests/test_target_parser.py
+from pathlib import Path
+from cashflow.parsers.target import parse_target_csv
+
+FIXTURE = Path(__file__).parent / "fixtures" / "target_sample.csv"
+
+
+def test_parse_target_csv_returns_transactions():
+    txns = parse_target_csv(FIXTURE)
+    assert len(txns) > 0
+
+
+def test_parse_target_csv_skips_payments():
+    txns = parse_target_csv(FIXTURE)
+    descriptions = [t.description for t in txns]
+    assert not any("AUTO PAYMENT" in d for d in descriptions)
+
+
+def test_parse_target_csv_skips_returns():
+    txns = parse_target_csv(FIXTURE)
+    # Returns have negative amounts — should be kept as credits
+    returns = [t for t in txns if t.amount < 0]
+    assert len(returns) == 1  # The -12.48 return
+    assert returns[0].amount == -12.48
+
+
+def test_parse_target_csv_keeps_positive_amounts():
+    """Target amounts are already positive for purchases — no sign flip needed."""
+    txns = parse_target_csv(FIXTURE)
+    sales = [t for t in txns if t.amount > 0]
+    assert len(sales) == 4  # 66.43, 16.95, 326.27, 241.65
+
+
+def test_parse_target_csv_parses_iso_dates():
+    txns = parse_target_csv(FIXTURE)
+    first = [t for t in txns if t.amount == 66.43][0]
+    assert str(first.date) == "2026-03-11"
+
+
+def test_parse_target_csv_normalizes_merchant():
+    txns = parse_target_csv(FIXTURE)
+    assert all(t.merchant == "Target" for t in txns)
+
+
+def test_parse_target_csv_source_id_is_unique():
+    txns = parse_target_csv(FIXTURE)
+    source_ids = [t.source_id for t in txns]
+    assert len(source_ids) == len(set(source_ids))
+
+
+def test_parse_target_csv_sets_account_name():
+    txns = parse_target_csv(FIXTURE)
+    assert all(t.account_name == "Target Card" for t in txns)
+
+
+def test_parse_target_csv_sets_source_type():
+    txns = parse_target_csv(FIXTURE)
+    assert all(t.source_type == "csv" for t in txns)
+```
+
+- [ ] **Step 3: Run tests to verify they fail**
+
+Run: `python -m pytest tests/test_target_parser.py -v`
+Expected: FAIL — `ModuleNotFoundError`
+
+- [ ] **Step 4: Implement Target CSV parser**
+
+```python
+# src/cashflow/parsers/target.py
+import csv
+import hashlib
+from datetime import date
+from pathlib import Path
+
+from cashflow.models import ParsedTransaction
+
+
+def _make_source_id(row: dict) -> str:
+    """Generate a deterministic dedup key from a Target CSV row."""
+    raw = f"{row['Transaction Date']}|{row['Ref#']}|{row['Amount']}"
+    return f"target-csv-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
+
+
+def parse_target_csv(path: Path) -> list[ParsedTransaction]:
+    """Parse a Target RedCard CSV export into transactions.
+
+    Target CSVs use positive amounts for purchases and negative for
+    payments/returns. Payments are skipped. Returns are kept as negative
+    amounts (credits). No sign flip needed — matches spec convention.
+    """
+    transactions = []
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            amount = float(row["Amount"])
+            txn_type = row["Transaction Type"].strip()
+
+            # Skip payments
+            if txn_type == "Payment":
+                continue
+
+            txn_date = date.fromisoformat(row["Transaction Date"])
+            description = row["Description"].strip()
+
+            transactions.append(
+                ParsedTransaction(
+                    date=txn_date,
+                    amount=amount,
+                    description=description,
+                    merchant="Target",
+                    source_id=_make_source_id(row),
+                    source_type="csv",
+                    account_name="Target Card",
+                )
+            )
+
+    return transactions
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `python -m pytest tests/test_target_parser.py -v`
+Expected: All 9 tests PASS
+
+- [ ] **Step 6: Wire Target parser into CLI**
+
+In `src/cashflow/cli.py`, add import at top:
+```python
+from cashflow.parsers.target import parse_target_csv
+```
+
+In the ingest command's file processing loop, add an `elif` branch for Target files. The Target CSVs are named `Transactions.CSV`, `Transactions (1).CSV`, etc. — detect by checking for "transaction" in the filename:
+
+After the `elif "amazon"` branch, add:
+```python
+        elif "transaction" in csv_file.name.lower():
+            txns = parse_target_csv(csv_file)
+        else:
+            click.echo(f"  Skipped — no parser for {csv_file.name}")
+            continue
+```
+
+Also update the glob to include `.CSV` (uppercase) files since Target exports use uppercase extension. Change the glob line to:
+```python
+        csv_files = sorted(path.glob("*.csv")) + sorted(path.glob("*.CSV")) + sorted(path.glob("*.txt"))
+```
+
+- [ ] **Step 7: Run full test suite**
+
+Run: `python -m pytest tests/ -v`
+Expected: All tests pass
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add src/cashflow/parsers/target.py tests/test_target_parser.py tests/fixtures/target_sample.csv src/cashflow/cli.py
+git commit -m "feat: Target RedCard CSV parser"
+```
+
+---
+
 ## Summary
 
 After completing Plan 3, you have:
 - **Amazon order screen scrape parser** — extracts orders, items, dates, totals, Subscribe & Save status, account detection (fred/wife)
 - **Reconciliation engine** — matches Amazon items to Chase transactions via order number
-- **Mixed-source ingestion** — `cashflow ingest --files` handles both CSVs and Amazon order text files in the same directory
+- **Target RedCard CSV parser** — parses Target card statements, keeps returns as negative credits
+- **Mixed-source ingestion** — `cashflow ingest --files` handles Chase CSVs, Target CSVs, and Amazon order text files in the same directory
 - **End-to-end pipeline** — ingest CSVs → store transactions → categorize → ingest Amazon orders → reconcile → everything linked
-- ~53+ automated tests
+- ~62+ automated tests
 
 **Next:** Plan 4 adds the dashboard (FastAPI server, HTML frontend, sync mechanism).
