@@ -5,7 +5,7 @@ from cashflow.db import get_connection, store_transactions
 from cashflow.seed import seed_all
 from cashflow.parsers.chase import parse_chase_csv
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
-from cashflow.categorize import categorize_by_rules, categorize_by_llm
+from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 
 @click.group()
 @click.option("--db", type=click.Path(), default=None, help="Path to SQLite database (default: ~/.cashflow/cashflow.db).")
@@ -95,3 +95,63 @@ def status(ctx):
         click.secho(f"Review queue: {queue} items", fg="yellow")
     else:
         click.secho("Review queue: empty", fg="green")
+
+@cli.command()
+@click.pass_context
+def review(ctx):
+    """Interactively review and categorize pending transactions."""
+    conn = ctx.obj["conn"]
+
+    pending = get_pending_for_review(conn)
+    if not pending:
+        click.secho("Review queue is empty.", fg="green")
+        return
+
+    categories = conn.execute(
+        "SELECT id, name, type FROM categories ORDER BY type, name"
+    ).fetchall()
+    cat_list = [(c["id"], c["name"], c["type"]) for c in categories]
+
+    click.echo(f"\n{len(pending)} transactions to review:\n")
+
+    reviewed = 0
+    for txn in pending:
+        click.secho(f"  {txn['date']}  ${txn['amount']:>9,.2f}  {txn['merchant']}", fg="white", bold=True)
+        click.echo(f"  {txn['description']}")
+        if txn["suggested_category"]:
+            click.secho(f"  Suggested: {txn['suggested_category']} ({txn['confidence']}% confidence)", fg="cyan")
+
+        click.echo()
+        for i, (cat_id, cat_name, cat_type) in enumerate(cat_list, 1):
+            marker = "N" if cat_type == "necessity" else "W"
+            click.echo(f"    {i:>3}. [{marker}] {cat_name}")
+
+        click.echo()
+        choice = click.prompt(
+            "  Enter number to categorize, [a]ccept suggestion, [s]kip, [q]uit",
+            default="s",
+        )
+
+        if choice.lower() == "q":
+            break
+        elif choice.lower() == "s":
+            continue
+        elif choice.lower() == "a" and txn["suggested_category"]:
+            confirm_transaction(conn, txn["id"], txn["category_id"])
+            click.secho(f"  Confirmed: {txn['suggested_category']}", fg="green")
+            reviewed += 1
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(cat_list):
+                cat_id, cat_name, _ = cat_list[idx]
+                confirm_transaction(conn, txn["id"], cat_id)
+                click.secho(f"  Categorized: {cat_name}", fg="green")
+                reviewed += 1
+            else:
+                click.secho("  Invalid number, skipping.", fg="yellow")
+        else:
+            click.secho("  Skipped.", fg="yellow")
+
+        click.echo()
+
+    click.echo(f"\nReviewed {reviewed} transactions.")
