@@ -4,6 +4,8 @@ from pathlib import Path
 from cashflow.db import get_connection, store_transactions
 from cashflow.seed import seed_all
 from cashflow.parsers.chase import parse_chase_csv
+from cashflow.parsers.amazon import parse_amazon_orders
+from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 
@@ -35,11 +37,20 @@ def ingest(ctx, files, email, auto):
     if path is None:
         return
     total = 0
-    csv_files = [path] if path.is_file() else sorted(path.glob("*.csv"))
+    if path.is_file():
+        csv_files = [path]
+    else:
+        csv_files = sorted(path.glob("*.csv")) + sorted(path.glob("*.txt"))
     for csv_file in csv_files:
         click.echo(f"Parsing {csv_file.name}...")
         if "chase" in csv_file.name.lower():
             txns = parse_chase_csv(csv_file)
+        elif "amazon" in csv_file.name.lower():
+            orders = parse_amazon_orders(csv_file)
+            items_stored = store_amazon_orders(conn, orders)
+            click.echo(f"  {items_stored} new Amazon items from {len(orders)} orders")
+            total += items_stored
+            continue
         else:
             click.echo(f"  Skipped — no parser for {csv_file.name}")
             continue
@@ -58,6 +69,11 @@ def ingest(ctx, files, email, auto):
                 click.echo(f"  LLM: {llm_confirmed} auto-confirmed, {llm_pending} need review")
             except Exception as e:
                 click.echo(f"  LLM categorization skipped: {e}")
+
+    # Reconcile Amazon items with transactions
+    matched = reconcile_amazon(conn)
+    if matched > 0:
+        click.echo(f"  Reconciled: {matched} Amazon items linked to transactions")
 
 @cli.command()
 @click.pass_context
