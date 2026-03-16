@@ -111,8 +111,8 @@ def store_transactions(conn, txns: list[ParsedTransaction]) -> int:
             continue
         try:
             conn.execute(
-                "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, status, confidence, who, source_type) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 'shared', ?)",
-                (txn.source_id, txn.date.isoformat(), txn.amount, txn.description, txn.merchant, account_id, txn.source_type),
+                "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, status, confidence, who, source_type) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)",
+                (txn.source_id, txn.date.isoformat(), txn.amount, txn.description, txn.merchant, account_id, txn.who, txn.source_type),
             )
             inserted += 1
         except sqlite3.IntegrityError:

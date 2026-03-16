@@ -12,3 +12,4 @@ class ParsedTransaction:
     source_type: str
     account_name: str
     order_number: Optional[str] = None
+    who: str = "shared"
