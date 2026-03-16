@@ -22,6 +22,7 @@ ACCOUNTS = [
     ("Bank of America", "credit", "BofA"),
     ("Target Card", "credit", "Target"),
     ("Citi Costco", "credit", "Citi"),
+    ("Apple Card", "credit", "Apple"),
     ("Checking", "debit", "Chase"),
 ]
 GOALS = [
