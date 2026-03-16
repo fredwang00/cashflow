@@ -236,14 +236,22 @@ Read `src/cashflow/cli.py` first. Add import:
 from cashflow.parsers.bofa_cc import parse_bofa_cc_csv
 ```
 
-In the ingest file processing loop, add an `elif` branch for BofA CC files. BofA CC files are named like `April2025_8690.csv`, `February2026_9341.csv` — detect by the `_8690` or `_9341` suffix pattern:
+In the ingest file processing loop, add an `elif` branch for BofA CC files. BofA CC files are named like `April2025_8690.csv`, `February2026_9341.csv`, `currentTransaction_8690.csv` — detect by the `_NNNN.csv` suffix pattern.
+
+**CRITICAL: This branch must come BEFORE the Target `"transaction"` branch**, because `currentTransaction_8690.csv` contains "transaction" in its name. If Target is checked first, BofA CC files would be misrouted. The correct branch order is:
+
+1. `if "chase"` — Chase CSV
+2. `elif "amazon"` — Amazon txt
+3. `elif re.search(r"_\d{4}\.csv$")` — BofA CC (**before** Target)
+4. `elif "transaction"` — Target
+5. `else: skip`
 
 ```python
         elif re.search(r"_\d{4}\.csv$", csv_file.name, re.IGNORECASE):
             txns = parse_bofa_cc_csv(csv_file)
 ```
 
-Add `import re` at top of cli.py if not already there.
+Add `import re` at top of cli.py if not already there. Move the existing Target `elif "transaction"` branch so it comes AFTER this new BofA CC branch.
 
 - [ ] **Step 7: Run full test suite**
 
@@ -665,7 +673,16 @@ from cashflow.parsers.bofa_checking import parse_bofa_checking_csv
 from cashflow.db import store_income
 ```
 
-In the ingest file loop, add an `elif` for checking CSVs. BofA checking files are named `stmt.csv` or `stmt (1).csv`:
+In the ingest file loop, add an `elif` for checking CSVs BEFORE the BofA CC branch (since `stmt` won't conflict with other patterns). The full branch order should now be:
+
+1. `if "chase"` — Chase CSV
+2. `elif "amazon"` — Amazon txt
+3. `elif "stmt"` — BofA checking
+4. `elif re.search(r"_\d{4}\.csv$")` — BofA CC
+5. `elif "transaction"` — Target
+6. `else: skip`
+
+BofA checking files are named `stmt.csv` or `stmt (1).csv`:
 ```python
         elif "stmt" in csv_file.name.lower():
             check_expenses, check_income = parse_bofa_checking_csv(csv_file)
