@@ -1,6 +1,6 @@
 import sqlite3
 import pytest
-from cashflow.db import create_schema, get_connection
+from cashflow.db import create_schema
 
 def test_create_schema_creates_all_tables():
     conn = sqlite3.connect(":memory:")
