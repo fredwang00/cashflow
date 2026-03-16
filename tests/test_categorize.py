@@ -144,3 +144,61 @@ def test_categorize_by_llm_skips_already_categorized(db):
 
     assert categorized == 0
     assert pending == 0
+
+
+from cashflow.categorize import confirm_transaction, get_pending_for_review
+
+
+def test_confirm_transaction_updates_status(db):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Crumbl Cookies")
+    cat_id = db.execute("SELECT id FROM categories WHERE name = 'Fast Food'").fetchone()["id"]
+    confirm_transaction(db, txn_id=1, category_id=cat_id)
+    row = db.execute("SELECT * FROM transactions WHERE id = 1").fetchone()
+    assert row["status"] == "confirmed"
+    assert row["category_id"] == cat_id
+    assert row["confidence"] == 100
+
+
+def test_confirm_transaction_creates_merchant_rule(db):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Crumbl Cookies")
+    cat_id = db.execute("SELECT id FROM categories WHERE name = 'Fast Food'").fetchone()["id"]
+    confirm_transaction(db, txn_id=1, category_id=cat_id)
+    rule = db.execute(
+        "SELECT * FROM merchant_rules WHERE pattern = 'Crumbl Cookies'"
+    ).fetchone()
+    assert rule is not None
+    assert rule["category_id"] == cat_id
+    assert rule["source"] == "learned"
+
+
+def test_confirm_transaction_updates_existing_rule(db):
+    seed_all(db)
+    _insert_rule(db, "Crumbl", "Shopping")
+    _insert_pending_txn(db, "t1", "Crumbl Cookies")
+    cat_id = db.execute("SELECT id FROM categories WHERE name = 'Fast Food'").fetchone()["id"]
+    confirm_transaction(db, txn_id=1, category_id=cat_id)
+    rule = db.execute("SELECT * FROM merchant_rules WHERE pattern = 'Crumbl Cookies'").fetchone()
+    assert rule["category_id"] == cat_id
+    old_rule = db.execute("SELECT * FROM merchant_rules WHERE pattern = 'Crumbl'").fetchone()
+    assert old_rule is not None
+
+
+def test_get_pending_for_review(db):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Store A", 25.0)
+    _insert_pending_txn(db, "t2", "Store B", 75.0)
+    cat_id = db.execute("SELECT id FROM categories WHERE name = 'Shopping'").fetchone()["id"]
+    db.execute(
+        "UPDATE transactions SET category_id = ?, confidence = 60 WHERE source_id = 't1'",
+        (cat_id,),
+    )
+    db.commit()
+
+    pending = get_pending_for_review(db)
+    assert len(pending) == 2
+    t1 = [p for p in pending if p["source_id"] == "t1"][0]
+    assert t1["suggested_category"] == "Shopping"
+    t2 = [p for p in pending if p["source_id"] == "t2"][0]
+    assert t2["suggested_category"] is None

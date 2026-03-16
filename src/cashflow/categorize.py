@@ -140,3 +140,53 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
 
     conn.commit()
     return confirmed, still_pending
+
+
+def confirm_transaction(
+    conn: sqlite3.Connection, txn_id: int, category_id: int
+) -> None:
+    """Confirm a transaction's category and create/update a merchant rule."""
+    conn.execute(
+        "UPDATE transactions SET category_id = ?, status = 'confirmed', "
+        "confidence = 100 WHERE id = ?",
+        (category_id, txn_id),
+    )
+
+    txn = conn.execute(
+        "SELECT merchant FROM transactions WHERE id = ?", (txn_id,)
+    ).fetchone()
+
+    if txn:
+        merchant = txn["merchant"]
+        existing = conn.execute(
+            "SELECT id FROM merchant_rules WHERE pattern = ?", (merchant,)
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                "UPDATE merchant_rules SET category_id = ?, source = 'learned' "
+                "WHERE id = ?",
+                (category_id, existing["id"]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO merchant_rules (pattern, category_id, source, confidence) "
+                "VALUES (?, ?, 'learned', 100)",
+                (merchant, category_id),
+            )
+
+    conn.commit()
+
+
+def get_pending_for_review(conn: sqlite3.Connection) -> list[dict]:
+    """Get all pending transactions with their suggested category (if any)."""
+    rows = conn.execute(
+        "SELECT t.id, t.source_id, t.date, t.amount, t.merchant, t.description, "
+        "t.category_id, t.confidence, c.name as suggested_category "
+        "FROM transactions t "
+        "LEFT JOIN categories c ON t.category_id = c.id "
+        "WHERE t.status = 'pending' AND t.canonical_id IS NULL "
+        "ORDER BY t.date DESC"
+    ).fetchall()
+
+    return [dict(row) for row in rows]
