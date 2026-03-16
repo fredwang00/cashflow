@@ -119,3 +119,19 @@ def store_transactions(conn, txns: list[ParsedTransaction]) -> int:
             pass
     conn.commit()
     return inserted
+
+def store_income(conn: sqlite3.Connection, records: list[dict]) -> int:
+    inserted = 0
+    for rec in records:
+        try:
+            conn.execute(
+                "INSERT INTO income (source_id, date, amount, source, description) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (rec["source_id"], rec["date"].isoformat(), rec["amount"],
+                 rec["source"], rec.get("description", "")),
+            )
+            inserted += 1
+        except sqlite3.IntegrityError:
+            pass
+    conn.commit()
+    return inserted
