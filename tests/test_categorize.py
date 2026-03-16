@@ -75,3 +75,72 @@ def test_categorize_by_rules_increments_match_count(db):
     categorize_by_rules(db)
     rule = db.execute("SELECT match_count FROM merchant_rules WHERE pattern = 'Whole Foods'").fetchone()
     assert rule["match_count"] == 2
+
+
+from unittest.mock import patch, MagicMock
+from cashflow.categorize import categorize_by_llm
+
+
+def test_categorize_by_llm_assigns_category(db):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Crumbl Cookies")
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text='{"category": "Fast Food", "confidence": 95}')]
+
+    with patch("cashflow.categorize.anthropic") as mock_anthropic:
+        mock_client = MagicMock()
+        mock_anthropic.Anthropic.return_value = mock_client
+        mock_client.messages.create.return_value = mock_response
+        categorized, pending = categorize_by_llm(db)
+
+    assert categorized == 1
+    assert pending == 0
+    row = db.execute("SELECT * FROM transactions WHERE source_id = 't1'").fetchone()
+    cat = db.execute("SELECT name FROM categories WHERE id = ?", (row["category_id"],)).fetchone()
+    assert cat["name"] == "Fast Food"
+    assert row["status"] == "confirmed"
+    assert row["confidence"] == 95
+
+
+def test_categorize_by_llm_queues_low_confidence(db):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Mysterious Store")
+
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock(text='{"category": "Shopping", "confidence": 60}')]
+
+    with patch("cashflow.categorize.anthropic") as mock_anthropic:
+        mock_client = MagicMock()
+        mock_anthropic.Anthropic.return_value = mock_client
+        mock_client.messages.create.return_value = mock_response
+        categorized, pending = categorize_by_llm(db)
+
+    assert categorized == 0
+    assert pending == 1
+    row = db.execute("SELECT * FROM transactions WHERE source_id = 't1'").fetchone()
+    cat = db.execute("SELECT name FROM categories WHERE id = ?", (row["category_id"],)).fetchone()
+    assert cat["name"] == "Shopping"
+    assert row["status"] == "pending"
+    assert row["confidence"] == 60
+
+
+def test_categorize_by_llm_skips_already_categorized(db):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Crumbl Cookies")
+    cat_id = db.execute("SELECT id FROM categories WHERE name = 'Fast Food'").fetchone()["id"]
+    db.execute(
+        "UPDATE transactions SET category_id = ?, status = 'confirmed', confidence = 100 "
+        "WHERE source_id = 't1'",
+        (cat_id,),
+    )
+    db.commit()
+
+    with patch("cashflow.categorize.anthropic") as mock_anthropic:
+        mock_client = MagicMock()
+        mock_anthropic.Anthropic.return_value = mock_client
+        categorized, pending = categorize_by_llm(db)
+        mock_client.messages.create.assert_not_called()
+
+    assert categorized == 0
+    assert pending == 0
