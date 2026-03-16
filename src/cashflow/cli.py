@@ -5,6 +5,7 @@ from cashflow.db import get_connection, store_transactions
 from cashflow.seed import seed_all
 from cashflow.parsers.chase import parse_chase_csv
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
+from cashflow.categorize import categorize_by_rules, categorize_by_llm
 
 @click.group()
 @click.option("--db", type=click.Path(), default=None, help="Path to SQLite database (default: ~/.cashflow/cashflow.db).")
@@ -46,6 +47,17 @@ def ingest(ctx, files, email, auto):
         click.echo(f"  {stored} new transactions ({len(txns) - stored} duplicates skipped)")
         total += stored
     click.echo(f"\nDone. {total} transactions ingested.")
+    if total > 0:
+        click.echo("Categorizing...")
+        rules_matched, rules_unmatched = categorize_by_rules(conn)
+        click.echo(f"  Rules: {rules_matched} matched, {rules_unmatched} unmatched")
+
+        if rules_unmatched > 0:
+            try:
+                llm_confirmed, llm_pending = categorize_by_llm(conn)
+                click.echo(f"  LLM: {llm_confirmed} auto-confirmed, {llm_pending} need review")
+            except Exception as e:
+                click.echo(f"  LLM categorization skipped: {e}")
 
 @cli.command()
 @click.pass_context
