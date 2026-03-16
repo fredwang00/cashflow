@@ -1,4 +1,7 @@
+import json
 import sqlite3
+
+import anthropic
 
 
 def categorize_by_rules(conn: sqlite3.Connection) -> tuple[int, int]:
@@ -44,10 +47,6 @@ def categorize_by_rules(conn: sqlite3.Connection) -> tuple[int, int]:
 
     conn.commit()
     return matched, unmatched
-
-
-import json
-import anthropic
 
 
 CATEGORIZE_SYSTEM_PROMPT = """You categorize household financial transactions.
@@ -115,7 +114,7 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
             result = json.loads(raw)
             category_name = result["category"]
             confidence = int(result["confidence"])
-        except (json.JSONDecodeError, KeyError, IndexError, anthropic.APIError):
+        except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError, anthropic.APIError):
             still_pending += 1
             continue
 
