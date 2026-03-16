@@ -19,3 +19,18 @@ def test_ingest_then_status(tmp_path):
     result = runner.invoke(cli, ["--db", str(db_path), "status"])
     assert result.exit_code == 0
     assert "$" in result.output
+
+def test_tag_one_off(tmp_path):
+    db_path = tmp_path / "test.db"
+    fixture = Path(__file__).parent / "fixtures" / "chase_sample.csv"
+    runner = CliRunner()
+
+    # Ingest first
+    runner.invoke(cli, ["--db", str(db_path), "ingest", "--files", str(fixture)])
+
+    # Tag transaction 1 as one-off
+    result = runner.invoke(
+        cli, ["--db", str(db_path), "tag", "1", "--one-off", "NAS build"]
+    )
+    assert result.exit_code == 0
+    assert "tagged" in result.output.lower() or "one-off" in result.output.lower()

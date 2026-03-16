@@ -155,3 +155,28 @@ def review(ctx):
         click.echo()
 
     click.echo(f"\nReviewed {reviewed} transactions.")
+
+@cli.command()
+@click.argument("txn_id", type=int)
+@click.option("--one-off", type=str, help="Label this transaction as a one-off expense.")
+@click.pass_context
+def tag(ctx, txn_id, one_off):
+    """Tag a transaction (e.g., as a one-off expense)."""
+    conn = ctx.obj["conn"]
+
+    txn = conn.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    if not txn:
+        click.secho(f"Transaction {txn_id} not found.", fg="red")
+        return
+
+    if one_off:
+        conn.execute(
+            "UPDATE transactions SET is_one_off = 1, one_off_label = ? WHERE id = ?",
+            (one_off, txn_id),
+        )
+        conn.commit()
+        click.secho(
+            f"Tagged #{txn_id} as one-off: \"{one_off}\" "
+            f"(${txn['amount']:,.2f} on {txn['date']})",
+            fg="green",
+        )
