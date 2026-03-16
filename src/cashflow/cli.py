@@ -5,6 +5,7 @@ from cashflow.db import get_connection, store_transactions
 from cashflow.seed import seed_all
 from cashflow.parsers.chase import parse_chase_csv
 from cashflow.parsers.amazon import parse_amazon_orders
+from cashflow.parsers.target import parse_target_csv
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
@@ -51,6 +52,8 @@ def ingest(ctx, files, email, auto):
             click.echo(f"  {items_stored} new Amazon items from {len(orders)} orders")
             total += items_stored
             continue
+        elif "transaction" in csv_file.name.lower():
+            txns = parse_target_csv(csv_file)
         else:
             click.echo(f"  Skipped — no parser for {csv_file.name}")
             continue
