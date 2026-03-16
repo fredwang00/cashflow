@@ -99,3 +99,23 @@ CREATE TABLE IF NOT EXISTS ingest_state (
     metadata TEXT
 );
 """
+
+from cashflow.models import ParsedTransaction
+
+def store_transactions(conn, txns: list[ParsedTransaction]) -> int:
+    accounts = {row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM accounts").fetchall()}
+    inserted = 0
+    for txn in txns:
+        account_id = accounts.get(txn.account_name)
+        if account_id is None:
+            continue
+        try:
+            conn.execute(
+                "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, status, confidence, who, source_type) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, 'shared', ?)",
+                (txn.source_id, txn.date.isoformat(), txn.amount, txn.description, txn.merchant, account_id, txn.source_type),
+            )
+            inserted += 1
+        except sqlite3.IntegrityError:
+            pass
+    conn.commit()
+    return inserted
