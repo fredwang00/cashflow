@@ -1,2 +1,244 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; padding: 24px; }
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Header */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.month-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.month-nav button {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #e2e8f0;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.15s;
+}
+
+.month-nav button:hover {
+    background: #334155;
+}
+
+#month-label {
+    font-size: 1.1rem;
+    font-weight: 500;
+    min-width: 140px;
+    text-align: center;
+}
+
+/* Cards */
+.cards {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.card {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.card h2 {
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    margin-bottom: 8px;
+}
+
+.big-number {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 10px;
+}
+
+.card-detail {
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+
+/* Progress bar */
+.progress-bar-track {
+    width: 100%;
+    height: 8px;
+    background: #334155;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.4s ease, background 0.3s ease;
+}
+
+.progress-bar-fill.green  { background: #6ee7b7; }
+.progress-bar-fill.yellow { background: #fbbf24; }
+.progress-bar-fill.red    { background: #f87171; }
+
+/* Charts */
+.charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.chart-container {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+}
+
+.chart-container h2 {
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    margin-bottom: 12px;
+}
+
+canvas {
+    max-height: 300px;
+}
+
+/* Transactions */
+.transactions {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 20px;
+    overflow-x: auto;
+}
+
+.transactions h2 {
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    margin-bottom: 12px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+thead th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid #334155;
+    color: #94a3b8;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+thead th:hover {
+    color: #e2e8f0;
+}
+
+tbody tr {
+    border-bottom: 1px solid #1e293b;
+}
+
+tbody tr:nth-child(even) {
+    background: #172033;
+}
+
+tbody tr:hover {
+    background: #253348;
+}
+
+td {
+    padding: 8px 12px;
+    white-space: nowrap;
+}
+
+td.amount {
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+td.amount.negative {
+    color: #6ee7b7;
+}
+
+/* Who badges */
+.badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.badge-fred   { background: #1e3a5f; color: #60a5fa; }
+.badge-wife   { background: #3b1f4b; color: #c084fc; }
+.badge-shared { background: #1a3329; color: #6ee7b7; }
+
+/* Color utilities */
+.color-green  { color: #6ee7b7; }
+.color-yellow { color: #fbbf24; }
+.color-red    { color: #f87171; }
+.color-blue   { color: #60a5fa; }
+
+/* Responsive */
+@media (max-width: 768px) {
+    body { padding: 16px; }
+
+    header {
+        flex-direction: column;
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .cards {
+        grid-template-columns: 1fr;
+    }
+
+    .charts {
+        grid-template-columns: 1fr;
+    }
+
+    .big-number {
+        font-size: 1.6rem;
+    }
+}
