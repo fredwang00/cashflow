@@ -48,6 +48,8 @@ In `pyproject.toml`, add to dependencies:
     "uvicorn>=0.34",
 ```
 
+Also add `"httpx>=0.27"` to the `dev` optional dependencies (required by FastAPI's TestClient).
+
 Run: `pip install -e ".[dev]"`
 
 - [ ] **Step 2: Write failing tests for API endpoints**
@@ -174,8 +176,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from cashflow.db import DEFAULT_DB_PATH, create_schema
-from cashflow.seed import seed_all
+from cashflow.db import DEFAULT_DB_PATH
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -392,6 +393,7 @@ Read `src/cashflow/cli.py`. Add the dashboard command:
 @click.pass_context
 def dashboard(ctx, port):
     """Open the financial dashboard in a browser."""
+    import threading
     import webbrowser
     import uvicorn
     from cashflow.server import create_app
@@ -400,7 +402,8 @@ def dashboard(ctx, port):
     ctx.obj["conn"].close()
 
     app = create_app(db_path)
-    webbrowser.open(f"http://localhost:{port}")
+    # Delay browser open so server has time to start
+    threading.Timer(1.0, webbrowser.open, args=[f"http://localhost:{port}"]).start()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 ```
 
