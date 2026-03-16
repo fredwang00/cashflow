@@ -224,3 +224,20 @@ def tag(ctx, txn_id, one_off):
             f"(${txn['amount']:,.2f} on {txn['date']})",
             fg="green",
         )
+
+@cli.command()
+@click.option("--port", default=8080, help="Port to serve on.")
+@click.pass_context
+def dashboard(ctx, port):
+    """Open the financial dashboard in a browser."""
+    import threading
+    import webbrowser
+    import uvicorn
+    from cashflow.server import create_app
+
+    db_path = str(ctx.obj["conn"].execute("PRAGMA database_list").fetchone()[2])
+    ctx.obj["conn"].close()
+
+    app = create_app(db_path)
+    threading.Timer(1.0, webbrowser.open, args=[f"http://localhost:{port}"]).start()
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
