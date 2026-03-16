@@ -11,6 +11,14 @@ def _make_source_id(row: dict) -> str:
     return f"target-csv-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 
 
+def _clean_row(row: dict) -> dict:
+    """Strip BOM, extra quotes, and whitespace from CSV row keys and values."""
+    return {
+        k.strip().strip("\ufeff").strip('"'): v.strip() if v else v
+        for k, v in row.items()
+    }
+
+
 def parse_target_csv(path: Path) -> list[ParsedTransaction]:
     """Parse a Target RedCard CSV export into transactions.
 
@@ -19,9 +27,10 @@ def parse_target_csv(path: Path) -> list[ParsedTransaction]:
     amounts (credits). No sign flip needed — matches spec convention.
     """
     transactions = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        for row in reader:
+        for raw_row in reader:
+            row = _clean_row(raw_row)
             amount = float(row["Amount"])
             txn_type = row["Transaction Type"].strip()
 

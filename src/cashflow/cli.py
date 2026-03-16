@@ -41,7 +41,7 @@ def ingest(ctx, files, email, auto):
     if path.is_file():
         csv_files = [path]
     else:
-        csv_files = sorted(path.glob("*.csv")) + sorted(path.glob("*.txt"))
+        csv_files = sorted(path.glob("*.csv")) + sorted(path.glob("*.CSV")) + sorted(path.glob("*.txt"))
     for csv_file in csv_files:
         click.echo(f"Parsing {csv_file.name}...")
         if "chase" in csv_file.name.lower():
