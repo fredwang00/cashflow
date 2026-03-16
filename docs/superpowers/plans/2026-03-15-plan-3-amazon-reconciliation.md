@@ -302,7 +302,7 @@ SKIP_PATTERNS = [
     "Write a product review", "Leave seller feedback",
     "Return or replace items", "View your item",
     "Share gift receipt", "Get product support",
-    "View order details", "Add a protection plan",
+    "Add a protection plan",
     "Replace item",
 ]
 
@@ -312,8 +312,18 @@ SKIP_PREFIXES = [
     "Return items:", "Return window closed",
     "Return eligibility", "Purchased at",
     "The brand image", "Applied",
-    "Gift Card balance",
+    "Gift Card balance", "View order details",
+    "Your order was cancelled",
 ]
+
+
+def _normalize_for_dedup(text: str) -> str:
+    """Normalize dashes and whitespace for duplicate detection.
+
+    Amazon shows item names twice: display text uses em/en dashes,
+    accessible text uses regular hyphens. Normalize so they match.
+    """
+    return text.replace("\u2013", "-").replace("\u2014", "-").replace("\u2012", "-").strip()
 
 
 def _is_ui_chrome(line: str) -> bool:
@@ -437,11 +447,13 @@ def parse_amazon_orders(path: Path, default_account: str = "fred") -> list[Amazo
                 continue
 
             # Item name detection: non-chrome lines that appear as duplicates
-            if not _is_ui_chrome(scan_line) and scan_line not in seen_item_names:
-                seen_item_names.add(scan_line)
+            # Normalize dashes for comparison (em dash vs hyphen)
+            normalized = _normalize_for_dedup(scan_line)
+            if not _is_ui_chrome(scan_line) and normalized not in seen_item_names:
+                seen_item_names.add(normalized)
                 items.append(AmazonItem(name=scan_line))
                 current_subscribe_save = None
-            elif scan_line in seen_item_names:
+            elif normalized in seen_item_names:
                 # Duplicate line (accessible name) — skip
                 pass
 
@@ -918,9 +930,9 @@ def test_parse_target_csv_skips_payments():
     assert not any("AUTO PAYMENT" in d for d in descriptions)
 
 
-def test_parse_target_csv_skips_returns():
+def test_parse_target_csv_keeps_returns_as_credits():
     txns = parse_target_csv(FIXTURE)
-    # Returns have negative amounts — should be kept as credits
+    # Returns have negative amounts — kept as credits per spec convention
     returns = [t for t in txns if t.amount < 0]
     assert len(returns) == 1  # The -12.48 return
     assert returns[0].amount == -12.48
@@ -1042,10 +1054,7 @@ After the `elif "amazon"` branch, add:
             continue
 ```
 
-Also update the glob to include `.CSV` (uppercase) files since Target exports use uppercase extension. Change the glob line to:
-```python
-        csv_files = sorted(path.glob("*.csv")) + sorted(path.glob("*.CSV")) + sorted(path.glob("*.txt"))
-```
+Note: macOS APFS is case-insensitive, so `*.csv` already matches `Transactions.CSV`. No separate `*.CSV` glob is needed (it would double-count files). The existing glob from Task 4 handles this.
 
 - [ ] **Step 7: Run full test suite**
 
