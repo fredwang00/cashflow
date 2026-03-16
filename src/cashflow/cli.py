@@ -1,22 +1,30 @@
 import click
+from datetime import date
 from pathlib import Path
 from cashflow.db import get_connection, store_transactions
 from cashflow.seed import seed_all
 from cashflow.parsers.chase import parse_chase_csv
+from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 
 @click.group()
-def cli():
+@click.option("--db", type=click.Path(), default=None, help="Path to SQLite database (default: ~/.cashflow/cashflow.db).")
+@click.pass_context
+def cli(ctx, db):
     """Household financial dashboard."""
-    pass
+    ctx.ensure_object(dict)
+    db_path = Path(db) if db else None
+    conn = get_connection(db_path) if db_path else get_connection()
+    seed_all(conn)
+    ctx.obj["conn"] = conn
 
 @cli.command()
 @click.option("--files", type=click.Path(exists=True), help="Path to CSV inbox directory or file.")
 @click.option("--email", is_flag=True, help="Poll Gmail for new emails. (Not yet implemented.)")
 @click.option("--auto", is_flag=True, help="Run both email and file ingestion.")
-def ingest(files, email, auto):
+@click.pass_context
+def ingest(ctx, files, email, auto):
     """Ingest transactions from CSV files or email."""
-    conn = get_connection()
-    seed_all(conn)
+    conn = ctx.obj["conn"]
     if email or auto:
         click.echo("Email ingestion not yet implemented.")
     if not files and not auto:
@@ -38,4 +46,40 @@ def ingest(files, email, auto):
         click.echo(f"  {stored} new transactions ({len(txns) - stored} duplicates skipped)")
         total += stored
     click.echo(f"\nDone. {total} transactions ingested.")
-    conn.close()
+
+@cli.command()
+@click.pass_context
+def status(ctx):
+    """Show current month burn rate and YTD surplus."""
+    conn = ctx.obj["conn"]
+    today = date.today()
+    year, month = today.year, today.month
+    spending = get_month_spending(conn, year, month)
+    ceiling = get_goal(conn, "ceiling")
+    ceiling_amt = ceiling["amount"] if ceiling else 12000.0
+    days_in_month = (date(year, month % 12 + 1, 1) - date(year, month, 1)).days if month < 12 else 31
+    days_left = days_in_month - today.day
+    pct = (spending / ceiling_amt * 100) if ceiling_amt > 0 else 0
+    if pct < 80:
+        color = "green"
+    elif pct < 95:
+        color = "yellow"
+    else:
+        color = "red"
+    month_name = today.strftime("%B %Y")
+    click.secho(f"{month_name}: ${spending:,.0f} / ${ceiling_amt:,.0f} ceiling ({pct:.0f}%) — {days_left} days left", fg=color)
+    surplus = get_ytd_surplus(conn, year)
+    surplus_goal = get_goal(conn, "surplus")
+    surplus_amt = surplus_goal["amount"] if surplus_goal else 40000.0
+    months_elapsed = month
+    pace = (surplus / months_elapsed * 12) if months_elapsed > 0 else 0
+    surplus_pct = (surplus / surplus_amt * 100) if surplus_amt > 0 else 0
+    click.secho(
+        f"YTD surplus: ${surplus:,.0f} / ${surplus_amt:,.0f} goal ({surplus_pct:.0f}%) — on pace for ${pace:,.0f}",
+        fg="green" if surplus_pct >= (months_elapsed / 12 * 100) else "yellow",
+    )
+    queue = get_review_queue_count(conn)
+    if queue > 0:
+        click.secho(f"Review queue: {queue} items", fg="yellow")
+    else:
+        click.secho("Review queue: empty", fg="green")
