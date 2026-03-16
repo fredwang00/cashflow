@@ -616,17 +616,19 @@ git commit -m "feat: learning loop — corrections create persistent merchant ru
 
 ```python
 # tests/test_review.py
+from pathlib import Path
 from click.testing import CliRunner
 from cashflow.cli import cli
+
+FIXTURE = Path(__file__).parent / "fixtures" / "chase_sample.csv"
 
 
 def test_review_shows_pending_transactions(tmp_path):
     db_path = tmp_path / "test.db"
-    fixture_path = "tests/fixtures/chase_sample.csv"
     runner = CliRunner()
 
     # Ingest first (without API key, LLM will be skipped)
-    runner.invoke(cli, ["--db", str(db_path), "ingest", "--files", fixture_path])
+    runner.invoke(cli, ["--db", str(db_path), "ingest", "--files", str(FIXTURE)])
 
     # Review with 's' to skip all
     result = runner.invoke(
