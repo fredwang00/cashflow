@@ -15,7 +15,6 @@ SKIP_PATTERNS = [
     re.compile(r"AMERICAN EXPRESS.*ACH PMT", re.IGNORECASE),
     re.compile(r"CITI AUTOPAY", re.IGNORECASE),
     re.compile(r"TARGET CARD.*PAYMENT", re.IGNORECASE),
-    re.compile(r"COINBASE", re.IGNORECASE),
     re.compile(r"SANTBK.*WEBXFR", re.IGNORECASE),
     re.compile(r"SANTBK.*TNTRANSFER", re.IGNORECASE),
     re.compile(r"OVERDRAFT PROTECTION", re.IGNORECASE),
