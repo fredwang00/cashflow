@@ -81,17 +81,28 @@ from unittest.mock import patch, MagicMock
 from cashflow.categorize import categorize_by_llm
 
 
+def _mock_llm_response(json_body):
+    """Create a mock httpx.Response for the OpenAI-compatible chat completions endpoint."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json.return_value = {
+        "choices": [{"message": {"content": json_body}}]
+    }
+    return mock_resp
+
+
 def test_categorize_by_llm_assigns_category(db):
     seed_all(db)
     _insert_pending_txn(db, "t1", "Crumbl Cookies")
 
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text='{"category": "Fast Food", "confidence": 95}')]
+    mock_resp = _mock_llm_response('{"category": "Fast Food", "confidence": 95}')
 
-    with patch("cashflow.categorize.anthropic") as mock_anthropic:
+    with patch("cashflow.categorize.httpx.Client") as MockClient:
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
-        mock_client.messages.create.return_value = mock_response
+        MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+        MockClient.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_resp
         categorized, pending = categorize_by_llm(db)
 
     assert categorized == 1
@@ -107,13 +118,13 @@ def test_categorize_by_llm_queues_low_confidence(db):
     seed_all(db)
     _insert_pending_txn(db, "t1", "Mysterious Store")
 
-    mock_response = MagicMock()
-    mock_response.content = [MagicMock(text='{"category": "Shopping", "confidence": 60}')]
+    mock_resp = _mock_llm_response('{"category": "Shopping", "confidence": 60}')
 
-    with patch("cashflow.categorize.anthropic") as mock_anthropic:
+    with patch("cashflow.categorize.httpx.Client") as MockClient:
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
-        mock_client.messages.create.return_value = mock_response
+        MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+        MockClient.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_resp
         categorized, pending = categorize_by_llm(db)
 
     assert categorized == 0
@@ -136,11 +147,12 @@ def test_categorize_by_llm_skips_already_categorized(db):
     )
     db.commit()
 
-    with patch("cashflow.categorize.anthropic") as mock_anthropic:
+    with patch("cashflow.categorize.httpx.Client") as MockClient:
         mock_client = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client
+        MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+        MockClient.return_value.__exit__ = MagicMock(return_value=False)
         categorized, pending = categorize_by_llm(db)
-        mock_client.messages.create.assert_not_called()
+        mock_client.post.assert_not_called()
 
     assert categorized == 0
     assert pending == 0

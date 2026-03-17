@@ -1,7 +1,8 @@
 import json
+import os
 import sqlite3
 
-import anthropic
+import httpx
 
 
 def categorize_by_rules(conn: sqlite3.Connection) -> tuple[int, int]:
@@ -92,50 +93,65 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
         categories="\n".join(f"- {name}" for name in cat_names)
     )
 
-    client = anthropic.Anthropic()
+    api_url = os.environ.get(
+        "CASHFLOW_LLM_URL",
+        "https://hendrix-genai.spotify.net/taskforce/anthropic/v1/chat/completions",
+    )
+    api_key = os.environ.get("CASHFLOW_LLM_KEY", "HYI8htlKD9BacANig3cz4")
+    model = os.environ.get("CASHFLOW_LLM_MODEL", "claude-sonnet-4-5")
+
     confirmed = 0
     still_pending = 0
 
-    for txn in pending:
-        user_msg = (
-            f"Merchant: {txn['merchant']}\n"
-            f"Description: {txn['description']}\n"
-            f"Amount: ${txn['amount']:.2f}"
-        )
-
-        try:
-            response = client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=100,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_msg}],
+    with httpx.Client(timeout=30.0) as client:
+        for txn in pending:
+            user_msg = (
+                f"Merchant: {txn['merchant']}\n"
+                f"Description: {txn['description']}\n"
+                f"Amount: ${txn['amount']:.2f}"
             )
-            raw = response.content[0].text.strip()
-            result = json.loads(raw)
-            category_name = result["category"]
-            confidence = int(result["confidence"])
-        except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError, anthropic.APIError):
-            still_pending += 1
-            continue
 
-        category_id = cat_lookup.get(category_name)
-        if category_id is None:
-            still_pending += 1
-            continue
+            try:
+                resp = client.post(
+                    api_url,
+                    headers={"apikey": api_key, "Content-Type": "application/json"},
+                    json={
+                        "model": model,
+                        "max_tokens": 100,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_msg},
+                        ],
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                raw = data["choices"][0]["message"]["content"].strip()
+                result = json.loads(raw)
+                category_name = result["category"]
+                confidence = int(result["confidence"])
+            except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError, httpx.HTTPError):
+                still_pending += 1
+                continue
 
-        if confidence >= 90:
-            conn.execute(
-                "UPDATE transactions SET category_id = ?, status = 'confirmed', "
-                "confidence = ? WHERE id = ?",
-                (category_id, confidence, txn["id"]),
-            )
-            confirmed += 1
-        else:
-            conn.execute(
-                "UPDATE transactions SET category_id = ?, confidence = ? WHERE id = ?",
-                (category_id, confidence, txn["id"]),
-            )
-            still_pending += 1
+            category_id = cat_lookup.get(category_name)
+            if category_id is None:
+                still_pending += 1
+                continue
+
+            if confidence >= 90:
+                conn.execute(
+                    "UPDATE transactions SET category_id = ?, status = 'confirmed', "
+                    "confidence = ? WHERE id = ?",
+                    (category_id, confidence, txn["id"]),
+                )
+                confirmed += 1
+            else:
+                conn.execute(
+                    "UPDATE transactions SET category_id = ?, confidence = ? WHERE id = ?",
+                    (category_id, confidence, txn["id"]),
+                )
+                still_pending += 1
 
     conn.commit()
     return confirmed, still_pending
