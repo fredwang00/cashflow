@@ -26,7 +26,7 @@ SKIP_PATTERNS = [
 ]
 
 INCOME_PATTERNS = [
-    (re.compile(r"SPOTIFY USA INC.*DIRECT DEP", re.IGNORECASE), "fei_paycheck"),
+    (re.compile(r"SPOTIFY USA INC.*(?:DIRECT DEP|PAYROLL)", re.IGNORECASE), "fei_paycheck"),
 ]
 
 MERCHANT_PATTERNS = [
