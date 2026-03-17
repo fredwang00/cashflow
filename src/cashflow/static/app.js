@@ -101,9 +101,10 @@ function renderCategoryChart(byCategory) {
     const labels = sorted.map(function(c) { return c.category || 'Uncategorized'; });
     const data = sorted.map(function(c) { return c.total; });
 
-    var canvas = document.getElementById('category-chart');
+    var wrap = document.getElementById('category-chart-wrap');
     var chartHeight = Math.max(300, sorted.length * 38 + 60);
-    canvas.parentElement.style.height = chartHeight + 'px';
+    wrap.style.height = chartHeight + 'px';
+    var canvas = document.getElementById('category-chart');
 
     if (categoryChart) {
         categoryChart.data.labels = labels;

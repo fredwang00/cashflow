@@ -108,18 +108,12 @@ header h1 {
 .progress-bar-fill.red    { background: #f87171; }
 
 /* Charts */
-.charts {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    margin-bottom: 24px;
-}
-
 .chart-container {
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 10px;
     padding: 20px;
+    margin-bottom: 16px;
 }
 
 .chart-container h2 {
@@ -129,14 +123,6 @@ header h1 {
     letter-spacing: 0.04em;
     color: #94a3b8;
     margin-bottom: 12px;
-}
-
-#category-chart {
-    max-height: none;
-}
-
-#trend-chart {
-    max-height: 300px;
 }
 
 /* Transactions */
