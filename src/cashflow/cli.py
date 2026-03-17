@@ -225,6 +225,102 @@ def tag(ctx, txn_id, one_off):
             fg="green",
         )
 
+@cli.group()
+@click.pass_context
+def rule(ctx):
+    """Manage merchant categorization rules."""
+    pass
+
+
+@rule.command("list")
+@click.pass_context
+def rule_list(ctx):
+    """List all merchant rules."""
+    conn = ctx.obj["conn"]
+    rows = conn.execute(
+        "SELECT mr.pattern, c.name as category, mr.source, mr.match_count, mr.confidence "
+        "FROM merchant_rules mr JOIN categories c ON mr.category_id = c.id "
+        "ORDER BY mr.match_count DESC"
+    ).fetchall()
+    if not rows:
+        click.echo("No merchant rules defined.")
+        return
+    click.echo(f"\n{'Pattern':<35} {'Category':<25} {'Source':<8} {'Matches':>7}")
+    click.echo("-" * 80)
+    for r in rows:
+        click.echo(f"{r['pattern']:<35} {r['category']:<25} {r['source']:<8} {r['match_count']:>7}")
+    click.echo(f"\n{len(rows)} rules total.")
+
+
+@rule.command("set")
+@click.argument("pattern")
+@click.argument("category_name")
+@click.pass_context
+def rule_set(ctx, pattern, category_name):
+    """Create or update a merchant rule. Recategorizes matching transactions."""
+    conn = ctx.obj["conn"]
+
+    cat = conn.execute("SELECT id, name FROM categories WHERE name = ?", (category_name,)).fetchone()
+    if not cat:
+        # Try case-insensitive match
+        cat = conn.execute("SELECT id, name FROM categories WHERE LOWER(name) = LOWER(?)", (category_name,)).fetchone()
+    if not cat:
+        click.secho(f"Category '{category_name}' not found. Available:", fg="red")
+        for r in conn.execute("SELECT name FROM categories ORDER BY type, name").fetchall():
+            click.echo(f"  {r['name']}")
+        return
+
+    # Upsert rule
+    existing = conn.execute("SELECT id FROM merchant_rules WHERE pattern = ?", (pattern,)).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE merchant_rules SET category_id = ?, source = 'manual' WHERE id = ?",
+            (cat["id"], existing["id"]),
+        )
+        click.echo(f"Updated rule: '{pattern}' -> {cat['name']}")
+    else:
+        conn.execute(
+            "INSERT INTO merchant_rules (pattern, category_id, source, confidence) VALUES (?, ?, 'manual', 100)",
+            (pattern, cat["id"]),
+        )
+        click.echo(f"Created rule: '{pattern}' -> {cat['name']}")
+
+    # Apply to matching transactions
+    updated = conn.execute(
+        "UPDATE transactions SET category_id = ?, status = 'confirmed', confidence = 100 "
+        "WHERE canonical_id IS NULL AND LOWER(merchant) LIKE '%' || LOWER(?) || '%'",
+        (cat["id"], pattern),
+    ).rowcount
+    conn.commit()
+
+    if updated > 0:
+        click.secho(f"  Recategorized {updated} transactions.", fg="green")
+
+
+@rule.command("apply")
+@click.pass_context
+def rule_apply(ctx):
+    """Re-run all merchant rules on pending uncategorized transactions."""
+    conn = ctx.obj["conn"]
+    matched, unmatched = categorize_by_rules(conn)
+    click.echo(f"Rules matched: {matched}, unmatched: {unmatched}")
+
+
+@rule.command("add-category")
+@click.argument("name")
+@click.argument("type", type=click.Choice(["necessity", "want"]))
+@click.pass_context
+def rule_add_category(ctx, name, type):
+    """Add a new spending category."""
+    conn = ctx.obj["conn"]
+    try:
+        conn.execute("INSERT INTO categories (name, type) VALUES (?, ?)", (name, type))
+        conn.commit()
+        click.secho(f"Added category: {name} ({type})", fg="green")
+    except Exception:
+        click.secho(f"Category '{name}' already exists.", fg="yellow")
+
+
 @cli.command()
 @click.option("--port", default=8080, help="Port to serve on.")
 @click.pass_context
