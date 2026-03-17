@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sqlite3
 
 import httpx
@@ -50,22 +51,17 @@ def categorize_by_rules(conn: sqlite3.Connection) -> tuple[int, int]:
     return matched, unmatched
 
 
-CATEGORIZE_SYSTEM_PROMPT = """You categorize household financial transactions.
+CATEGORIZE_SYSTEM_PROMPT = """You categorize household financial transactions into EXACTLY one of the categories below.
 
-Given a merchant name, amount, and description, return a JSON object with:
-- "category": the best matching category name from the list below
-- "confidence": 0-100 how confident you are
+Return ONLY a JSON object with two fields — no markdown, no explanation, no extra fields:
+{{"category": "EXACT_CATEGORY_NAME", "confidence": 95}}
 
-CATEGORIES:
+confidence is an integer 0-100.
+
+VALID CATEGORIES (you MUST use one of these exact strings):
 {categories}
 
-Rules:
-- Return ONLY valid JSON, no explanation
-- "category" must exactly match one of the category names above
-- Use 90+ confidence for obvious matches
-- Use 50-89 for reasonable guesses
-- Use below 50 only if truly uncertain
-"""
+If unsure, pick the closest match with lower confidence. Use "Shopping" as fallback."""
 
 
 def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
@@ -127,9 +123,18 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
                 resp.raise_for_status()
                 data = resp.json()
                 raw = data["choices"][0]["message"]["content"].strip()
+                # Strip markdown code fences if present
+                if raw.startswith("```"):
+                    raw = re.sub(r"^```(?:json)?\n?", "", raw)
+                    raw = re.sub(r"\n?```$", "", raw)
                 result = json.loads(raw)
                 category_name = result["category"]
-                confidence = int(result["confidence"])
+                # Handle confidence as float 0-1 or int 0-100
+                conf_raw = result["confidence"]
+                if isinstance(conf_raw, float) and conf_raw <= 1.0:
+                    confidence = int(conf_raw * 100)
+                else:
+                    confidence = int(conf_raw)
             except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError, httpx.HTTPError):
                 still_pending += 1
                 continue
