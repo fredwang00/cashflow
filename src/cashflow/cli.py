@@ -58,7 +58,7 @@ def ingest(ctx, files, email, auto):
             click.echo(f"  {items_stored} new Amazon items from {len(orders)} orders")
             total += items_stored
             continue
-        elif "stmt" in csv_file.name.lower():
+        elif "stmt" in csv_file.name.lower() or "bofa" in csv_file.name.lower():
             check_expenses, check_income = parse_bofa_checking_csv(csv_file)
             if check_expenses:
                 stored = store_transactions(conn, check_expenses)
