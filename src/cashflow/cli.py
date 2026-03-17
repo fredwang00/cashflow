@@ -308,15 +308,16 @@ def rule_apply(ctx):
 
 @rule.command("add-category")
 @click.argument("name")
-@click.argument("type", type=click.Choice(["necessity", "want"]))
+@click.argument("type", type=click.Choice(["n", "w", "necessity", "want"]))
 @click.pass_context
 def rule_add_category(ctx, name, type):
-    """Add a new spending category."""
+    """Add a new spending category. Type: n=necessity, w=want."""
+    full_type = "necessity" if type in ("n", "necessity") else "want"
     conn = ctx.obj["conn"]
     try:
-        conn.execute("INSERT INTO categories (name, type) VALUES (?, ?)", (name, type))
+        conn.execute("INSERT INTO categories (name, type) VALUES (?, ?)", (name, full_type))
         conn.commit()
-        click.secho(f"Added category: {name} ({type})", fg="green")
+        click.secho(f"Added category: {name} ({full_type})", fg="green")
     except Exception:
         click.secho(f"Category '{name}' already exists.", fg="yellow")
 
