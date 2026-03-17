@@ -55,29 +55,38 @@ async function fetchJson(url) {
     return res.json();
 }
 
-// ── Render: Status Cards ──────────────────────────────────────────────────
+// ── Status state (from /api/status, used for review queue + ceiling/goal) ─
+let statusData = { ceiling: 12000, surplus_goal: 40000, review_queue: 0 };
+
 function renderStatus(s) {
-    const pct = Math.min(s.pct, 100);
-    const color = pctColor(s.pct);
-
-    $burnAmount.textContent = fmt(s.month_spending);
-    $burnAmount.className = 'big-number color-' + color;
-    $burnBar.style.width = pct + '%';
-    $burnBar.className = 'progress-bar-fill ' + color;
-    $burnDetail.textContent = Math.round(s.pct) + '% of ' + fmt(s.ceiling) + ' ceiling \u00b7 ' + s.days_left + ' days left';
-
-    const surplusPositive = s.ytd_surplus >= 0;
-    $surplusAmt.textContent = fmt(s.ytd_surplus);
-    $surplusAmt.className = 'big-number ' + (surplusPositive ? 'color-green' : 'color-red');
-
-    const monthsElapsed = currentMonth;
-    const pace = monthsElapsed > 0 ? (s.ytd_surplus / monthsElapsed) * 12 : 0;
-    $surplusDetail.textContent = 'Goal: ' + fmt(s.surplus_goal) + ' \u00b7 On pace: ' + fmt(pace);
+    statusData = s;
+    renderBurnCard(s.month_spending, s.ceiling, s.days_left);
+    renderSurplusCard(s.ytd_surplus, s.surplus_goal);
 
     const queueCount = s.review_queue || 0;
     $reviewCount.textContent = queueCount;
     $reviewCount.className = 'big-number ' + (queueCount > 0 ? 'color-yellow' : 'color-green');
     $reviewDetail.textContent = queueCount === 0 ? 'All clear' : 'items need review';
+}
+
+function renderBurnCard(spending, ceiling, daysLeft) {
+    const pct = ceiling > 0 ? (spending / ceiling) * 100 : 0;
+    const color = pctColor(pct);
+    $burnAmount.textContent = fmt(spending);
+    $burnAmount.className = 'big-number color-' + color;
+    $burnBar.style.width = Math.min(pct, 100) + '%';
+    $burnBar.className = 'progress-bar-fill ' + color;
+    var detail = Math.round(pct) + '% of ' + fmt(ceiling) + ' ceiling';
+    if (daysLeft !== null) detail += ' \u00b7 ' + daysLeft + ' days left';
+    $burnDetail.textContent = detail;
+}
+
+function renderSurplusCard(surplus, goal) {
+    $surplusAmt.textContent = fmt(surplus);
+    $surplusAmt.className = 'big-number ' + (surplus >= 0 ? 'color-green' : 'color-red');
+    const monthsElapsed = currentMonth;
+    const pace = monthsElapsed > 0 ? (surplus / monthsElapsed) * 12 : 0;
+    $surplusDetail.textContent = 'Goal: ' + fmt(goal) + ' \u00b7 On pace: ' + fmt(pace);
 }
 
 // ── Render: Category Chart ────────────────────────────────────────────────
@@ -287,6 +296,20 @@ async function loadMonth() {
 
     var monthly = results[0];
     var yearly = results[1];
+
+    // Update burn card from selected month's data
+    var now = new Date();
+    var isCurrentMonth = (currentYear === now.getFullYear() && currentMonth === now.getMonth() + 1);
+    var daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+    var daysLeft = isCurrentMonth ? daysInMonth - now.getDate() : null;
+    renderBurnCard(monthly.total, statusData.ceiling, daysLeft);
+
+    // Update surplus from yearly data (cumulative through selected month)
+    var ytdSurplus = 0;
+    for (var i = 0; i < currentMonth; i++) {
+        ytdSurplus += yearly.months[i].surplus;
+    }
+    renderSurplusCard(ytdSurplus, statusData.surplus_goal);
 
     renderCategoryChart(monthly.by_category || []);
     renderTransactions(monthly.transactions || []);
