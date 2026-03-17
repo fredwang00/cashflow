@@ -102,7 +102,8 @@ function renderCategoryChart(byCategory) {
     const data = sorted.map(function(c) { return c.total; });
 
     var canvas = document.getElementById('category-chart');
-    canvas.parentElement.style.minHeight = Math.max(200, sorted.length * 32 + 40) + 'px';
+    var chartHeight = Math.max(300, sorted.length * 38 + 60);
+    canvas.parentElement.style.height = chartHeight + 'px';
 
     if (categoryChart) {
         categoryChart.data.labels = labels;
