@@ -156,3 +156,4 @@ python -m pytest tests/ -v
 - [ ] `cashflow ask` — natural language queries against SQLite ("how much did we spend on kids activities vs last year?")
 - [ ] `cashflow briefing` — weekly push summary to both partners
 - [ ] LAN sync — rsync to always-on server for household dashboard access
+- [ ] Local model support — point `CASHFLOW_LLM_URL` at a vLLM or Ollama endpoint running a local open-weight model (Llama 3, Mistral, Qwen) for fully offline categorization. The OpenAI-compatible chat completions interface is already used, so any local server that speaks that protocol works without code changes.
