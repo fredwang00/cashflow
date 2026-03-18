@@ -1,8 +1,14 @@
 # cashflow
 
-A personal household financial dashboard that actually works. Built in a weekend to replace the manual spreadsheet nightmare of cross-referencing credit card statements, Amazon orders, and bank CSVs.
+A highly opinionated household financial dashboard. Not trying to be Mint. Not trying to support every bank ever created.
 
-The core insight: most personal finance tools fail at the data layer. This one doesn't. It parses 7 different card formats (CSV and screen scrapes), cracks the Amazon black box by reconciling order numbers to individual item names, and uses LLM categorization that learns from your corrections.
+The premise: most personal finance tools fail at the data layer — they either require you to connect bank accounts through a third-party aggregator (Plaid, Yodlee) that can break, get deprecated, or get acquired, or they expect you to manually categorize hundreds of transactions in a clunky web UI.
+
+This tool takes a different approach. It targets users who want to **streamline their finances around a small set of banks and credit cards that have good CSV exports and data hygiene** — Chase, BofA, Apple Card, Target — and builds a durable, local-first pipeline on top of them. You own your data. Nothing phones home. The database is a single SQLite file on your machine.
+
+The secondary insight: Amazon is the biggest black box in household spending. A single Chase line item like "AMAZON MKTPL*B80X61JB1 $44.52" tells you nothing. This tool cracks it by reconciling order numbers to actual product names — so you know if that $44 was supplements, kids clothes, or a kitchen gadget.
+
+Built in a weekend to replace a manual spreadsheet. Now handles 2,800+ transactions across 7 card formats with LLM categorization that learns from corrections.
 
 ![cashflow dashboard](docs/screenshot.png)
 
