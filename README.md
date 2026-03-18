@@ -8,6 +8,12 @@ This tool takes a different approach. It targets users who want to **streamline 
 
 The secondary insight: Amazon is the biggest black box in household spending. A single Chase line item like "AMAZON MKTPL*B80X61JB1 $44.52" tells you nothing. This tool cracks it by reconciling order numbers to actual product names — so you know if that $44 was supplements, kids clothes, or a kitchen gadget.
 
+**On budgeting philosophy:** This tool deliberately rejects the "6 jars / sinking funds for everything" approach to household budgeting. Rigidly pre-allocating every dollar — $400 for vacation, $200 for car repairs, $150 for Christmas — sounds disciplined but is exhausting to maintain and breaks down the moment life doesn't follow the spreadsheet.
+
+Instead, cashflow is built around a simpler mental model: target **60-80% of monthly take-home on structured spending** (mortgage, utilities, recurring bills, investments, groceries) and let the remaining slack absorb the fun stuff — vacations, big purchases, birthday dinners, the random $500 Amazon order that turns out to be a NAS build. Track your annual surplus target as a single number. If you're on pace, you're fine. If you're not, the dashboard shows you exactly where the money went.
+
+The goal isn't perfection. It's visibility.
+
 Built in a weekend to replace a manual spreadsheet. Now handles 2,800+ transactions across 7 card formats with LLM categorization that learns from corrections.
 
 ![cashflow dashboard](docs/screenshot.png)
