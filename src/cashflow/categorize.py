@@ -91,10 +91,10 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
 
     api_url = os.environ.get(
         "CASHFLOW_LLM_URL",
-        "https://hendrix-genai.spotify.net/taskforce/anthropic/v1/chat/completions",
+        "https://api.anthropic.com/v1/messages",
     )
-    api_key = os.environ.get("CASHFLOW_LLM_KEY", "HYI8htlKD9BacANig3cz4")
-    model = os.environ.get("CASHFLOW_LLM_MODEL", "claude-sonnet-4-5")
+    api_key = os.environ.get("CASHFLOW_LLM_KEY", "")
+    model = os.environ.get("CASHFLOW_LLM_MODEL", "claude-sonnet-4-5-20250929")
 
     confirmed = 0
     still_pending = 0

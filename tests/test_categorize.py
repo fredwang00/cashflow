@@ -77,8 +77,11 @@ def test_categorize_by_rules_increments_match_count(db):
     assert rule["match_count"] == 2
 
 
+import os
 from unittest.mock import patch, MagicMock
 from cashflow.categorize import categorize_by_llm
+
+os.environ.setdefault("CASHFLOW_LLM_KEY", "test-key")
 
 
 def _mock_llm_response(json_body):
