@@ -74,8 +74,14 @@ cashflow rule set "ALLY" "Auto Lease" # Create/update a rule + recategorize
 cashflow rule add-category "Auto Lease" n  # Add new category (n=necessity, w=want)
 cashflow rule apply                   # Re-run all rules on pending transactions
 
+# Search
+cashflow find "marriott"                    # search by merchant or description
+cashflow find "kroger" --year 2025          # filter by year
+cashflow find "amazon" --limit 5            # show fewer results
+
 # Tagging
-cashflow tag 1234 --one-off "Great Wolf Lodge family trip"
+cashflow find "luvansh"                     # get the transaction ID first
+cashflow tag 1234 --one-off "Diamond bracelet - wife Xmas gift"
 
 # Dashboard
 cashflow dashboard                    # Opens http://localhost:8080
