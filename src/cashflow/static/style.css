@@ -244,6 +244,27 @@ td.amount.negative {
     color: #60a5fa;
 }
 
+/* One-off toggle button in transaction table */
+.oneoff-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    color: #334155;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s;
+    line-height: 1;
+}
+
+.oneoff-btn:hover {
+    color: #fbbf24;
+}
+
+.oneoff-btn.active {
+    color: #fbbf24;
+}
+
 /* Uncategorized badge */
 .badge-uncategorized {
     background: #1e1b4b;

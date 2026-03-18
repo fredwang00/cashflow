@@ -369,6 +369,31 @@ function renderTxRows(txs) {
         tdWho.appendChild(badgeEl(tx.who));
         tr.appendChild(tdWho);
 
+        var tdOneOff = document.createElement('td');
+        var btn = document.createElement('button');
+        btn.className = 'oneoff-btn' + (tx.is_one_off ? ' active' : '');
+        btn.title = tx.one_off_label || '';
+        btn.textContent = tx.is_one_off ? '★' : '☆';
+        btn.dataset.id = tx.id;
+        btn.dataset.label = tx.one_off_label || '';
+        btn.addEventListener('click', function() {
+            var id = parseInt(this.dataset.id);
+            var currentLabel = this.dataset.label;
+            var newLabel = this.classList.contains('active') ? '' : (prompt('One-off label (optional):', currentLabel) ?? currentLabel);
+            if (newLabel === null) return; // cancelled
+            fetch('/api/transactions/' + id + '/toggle-oneoff?label=' + encodeURIComponent(newLabel), { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    btn.classList.toggle('active', data.is_one_off);
+                    btn.textContent = data.is_one_off ? '★' : '☆';
+                    btn.dataset.label = newLabel;
+                    btn.title = newLabel;
+                    tx.is_one_off = data.is_one_off ? 1 : 0;
+                });
+        });
+        tdOneOff.appendChild(btn);
+        tr.appendChild(tdOneOff);
+
         $txBody.appendChild(tr);
     }
 }

@@ -153,7 +153,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
                 "WHERE strftime('%Y', date) = ? AND strftime('%m', date) = ?",
                 (str(year), f"{mo:02d}"),
             ).fetchone()["total"]
-                sp_baseline = conn.execute(
+            sp_baseline = conn.execute(
                 "SELECT COALESCE(SUM(amount), 0) as total FROM transactions "
                 "WHERE canonical_id IS NULL AND is_one_off = 0 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
                 (str(year), f"{mo:02d}"),
@@ -176,6 +176,24 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         ytd_spending = sum(m["spending"] for m in months)
         conn.close()
         return {"year": year, "months": months, "ytd_income": round(ytd_income, 2), "ytd_spending": round(ytd_spending, 2), "ytd_surplus": round(ytd_income - ytd_spending, 2)}
+
+    @app.post("/api/transactions/{txn_id}/toggle-oneoff")
+    def toggle_oneoff(txn_id: int, label: str = ""):
+        """Toggle is_one_off on a transaction. Opens a write connection."""
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        txn = conn.execute("SELECT id, is_one_off FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+        if not txn:
+            conn.close()
+            return {"error": "not found"}
+        new_val = 0 if txn["is_one_off"] else 1
+        conn.execute(
+            "UPDATE transactions SET is_one_off = ?, one_off_label = ? WHERE id = ?",
+            (new_val, label if new_val else None, txn_id),
+        )
+        conn.commit()
+        conn.close()
+        return {"id": txn_id, "is_one_off": bool(new_val)}
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     return app
