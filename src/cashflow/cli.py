@@ -72,7 +72,8 @@ def ingest(ctx, files, email, auto):
         elif re.search(r"_\d{4}\.csv$", csv_file.name, re.IGNORECASE):
             txns = parse_bofa_cc_csv(csv_file)
         elif "capital" in csv_file.name.lower():
-            txns = parse_capital_one(csv_file)
+            acct = "Capital One Wendy" if "wendy" in csv_file.name.lower() else "Capital One"
+            txns = parse_capital_one(csv_file, account_name=acct)
         elif "citi" in csv_file.name.lower():
             txns = parse_citi(csv_file)
         elif "apple" in csv_file.name.lower():

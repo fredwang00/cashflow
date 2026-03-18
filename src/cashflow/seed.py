@@ -19,6 +19,7 @@ ACCOUNTS = [
     ("Chase Prime Visa", "credit", "Chase"),
     ("Chase Freedom", "credit", "Chase"),
     ("Capital One", "credit", "Capital One"),
+    ("Capital One Wendy", "credit", "Capital One"),
     ("Bank of America", "credit", "BofA"),
     ("Target Card", "credit", "Target"),
     ("Citi Costco", "credit", "Citi"),

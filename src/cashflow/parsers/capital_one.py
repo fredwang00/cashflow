@@ -15,8 +15,8 @@ AMOUNT_RE = re.compile(r"^-?\$[\d,]+\.\d{2}$")
 MONTH_RE = re.compile(r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$")
 DAY_RE = re.compile(r"^\d{1,2}$")
 
-SKIP_CATEGORIES = {"Payment"}
-SKIP_DESCRIPTIONS = {"CREDIT-TRAVEL REWARD"}
+SKIP_CATEGORIES = {"Payment", "Fee"}
+SKIP_DESCRIPTIONS = {"CREDIT-TRAVEL REWARD", "CAPITAL ONE MEMBER FEE"}
 
 UI_CHROME = {
     "Print", "Date", "Description", "Category", "Card", "Amount", "Details",
@@ -25,6 +25,15 @@ UI_CHROME = {
     "All TransactionsPayment Activity", "Scheduled Payments",
     "Search/filter transactions", "Filter", "View spend analyzer",
     "Manage AutoPay", "AUTOPAY SETTINGS",
+    "There are no pending transactions.",
+    "There are no transactions to show for this statement.",
+    "There are no transactions since your last statement.",
+}
+
+CARDHOLDER_RE = re.compile(r"^(Fei W\.|Wendy R\.)", re.IGNORECASE)
+CARDHOLDER_WHO = {
+    "fei": "fred",
+    "wendy": "wife",
 }
 
 
@@ -54,7 +63,7 @@ def _infer_year(month: int, statement_date: date | None) -> int:
     return statement_date.year
 
 
-def parse_capital_one(path: Path) -> list[ParsedTransaction]:
+def parse_capital_one(path: Path, account_name: str = "Capital One") -> list[ParsedTransaction]:
     """Parse a Capital One screen scrape into transactions.
 
     Skips payments, travel credit rewards, and pending transactions.
@@ -85,8 +94,8 @@ def parse_capital_one(path: Path) -> list[ParsedTransaction]:
             i += 1
             continue
 
-        # Skip UI chrome and empty lines
-        if not line or line in UI_CHROME or line.startswith("Total:") or line.startswith("Fei W."):
+        # Skip UI chrome, empty lines, and cardholder name lines
+        if not line or line in UI_CHROME or line.startswith("Total:") or CARDHOLDER_RE.match(line):
             i += 1
             continue
 
@@ -134,10 +143,16 @@ def parse_capital_one(path: Path) -> list[ParsedTransaction]:
             category = lines[i].strip()
             i += 1
 
-            # Next: card info (skip)
+            # Next: card info — extract who from cardholder name
             if i >= len(lines):
                 break
-            i += 1  # skip "Fei W. ...6983"
+            card_line = lines[i].strip()
+            who = "shared"
+            if card_line.lower().startswith("fei"):
+                who = "fred"
+            elif card_line.lower().startswith("wendy"):
+                who = "wife"
+            i += 1
 
             # Next: amount
             if i >= len(lines):
@@ -167,7 +182,8 @@ def parse_capital_one(path: Path) -> list[ParsedTransaction]:
                     merchant=description,
                     source_id=_make_source_id(txn_date, description, amount),
                     source_type="csv",
-                    account_name="Capital One",
+                    account_name=account_name,
+                    who=who,
                 )
             )
         else:
