@@ -111,11 +111,25 @@ function renderBurnCard(spending, ceiling, daysLeft) {
 }
 
 function renderSurplusCard(surplus, goal) {
+    const now = new Date();
+    const isCurrentYear = (currentYear === now.getFullYear());
+    const isCurrentOrPastMonth = !isCurrentYear || currentMonth <= now.getMonth() + 1;
+
     $surplusAmt.textContent = fmt(surplus);
     $surplusAmt.className = 'big-number ' + (surplus >= 0 ? 'color-green' : 'color-red');
+
+    // Update card title to reflect the viewing context
+    const $surplusCard = document.getElementById('surplus-card');
+    if ($surplusCard) {
+        const h2 = $surplusCard.querySelector('h2');
+        if (h2) {
+            h2.textContent = isCurrentYear ? 'YTD Surplus' : currentYear + ' Surplus';
+        }
+    }
+
     const monthsElapsed = currentMonth;
-    const pace = monthsElapsed > 0 ? (surplus / monthsElapsed) * 12 : 0;
-    $surplusDetail.textContent = 'Goal: ' + fmt(goal) + ' · On pace: ' + fmt(pace);
+    const pace = (isCurrentYear && monthsElapsed > 0) ? (surplus / monthsElapsed) * 12 : null;
+    $surplusDetail.textContent = 'Goal: ' + fmt(goal) + (pace !== null ? ' · On pace: ' + fmt(pace) : '');
 }
 
 // ── Render: Category Chart ────────────────────────────────────────────────

@@ -104,10 +104,12 @@ from cashflow.models import ParsedTransaction
 
 def store_transactions(conn, txns: list[ParsedTransaction]) -> int:
     accounts = {row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM accounts").fetchall()}
+    unknown_accounts: set[str] = set()
     inserted = 0
     for txn in txns:
         account_id = accounts.get(txn.account_name)
         if account_id is None:
+            unknown_accounts.add(txn.account_name)
             continue
         try:
             conn.execute(
@@ -118,6 +120,13 @@ def store_transactions(conn, txns: list[ParsedTransaction]) -> int:
         except sqlite3.IntegrityError:
             pass
     conn.commit()
+    if unknown_accounts:
+        import warnings
+        warnings.warn(
+            f"Skipped transactions with unknown account names: {unknown_accounts}. "
+            "Add them with: cashflow rule add-category or check seed.py ACCOUNTS.",
+            stacklevel=2,
+        )
     return inserted
 
 def store_income(conn: sqlite3.Connection, records: list[dict]) -> int:

@@ -82,16 +82,26 @@ from unittest.mock import patch, MagicMock
 from cashflow.categorize import categorize_by_llm
 
 os.environ.setdefault("CASHFLOW_LLM_KEY", "test-key")
+os.environ.setdefault("CASHFLOW_LLM_URL", "http://test.local/v1/chat/completions")
 
 
-def _mock_llm_response(json_body):
-    """Create a mock httpx.Response for the OpenAI-compatible chat completions endpoint."""
+def _mock_llm_response(json_body, format="openai"):
+    """Create a mock httpx.Response.
+
+    format='openai' → OpenAI-compatible choices[] format
+    format='anthropic' → native Anthropic content[] format
+    """
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.raise_for_status = MagicMock()
-    mock_resp.json.return_value = {
-        "choices": [{"message": {"content": json_body}}]
-    }
+    if format == "anthropic":
+        mock_resp.json.return_value = {
+            "content": [{"type": "text", "text": json_body}]
+        }
+    else:
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": json_body}}]
+        }
     return mock_resp
 
 
@@ -137,6 +147,24 @@ def test_categorize_by_llm_queues_low_confidence(db):
     assert cat["name"] == "Shopping"
     assert row["status"] == "pending"
     assert row["confidence"] == 60
+
+
+def test_categorize_by_llm_handles_anthropic_response_format(db):
+    """Native Anthropic API returns content[] not choices[]."""
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Crumbl Cookies")
+
+    mock_resp = _mock_llm_response('{"category": "Fast Food", "confidence": 92}', format="anthropic")
+
+    with patch("cashflow.categorize.httpx.Client") as MockClient:
+        mock_client = MagicMock()
+        MockClient.return_value.__enter__ = MagicMock(return_value=mock_client)
+        MockClient.return_value.__exit__ = MagicMock(return_value=False)
+        mock_client.post.return_value = mock_resp
+        categorized, pending = categorize_by_llm(db)
+
+    assert categorized == 1
+    assert pending == 0
 
 
 def test_categorize_by_llm_skips_already_categorized(db):

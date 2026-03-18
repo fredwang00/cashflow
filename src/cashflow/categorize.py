@@ -89,11 +89,15 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
         categories="\n".join(f"- {name}" for name in cat_names)
     )
 
-    api_url = os.environ.get(
-        "CASHFLOW_LLM_URL",
-        "https://api.anthropic.com/v1/messages",
-    )
+    api_url = os.environ.get("CASHFLOW_LLM_URL", "")
+    if not api_url:
+        raise ValueError(
+            "CASHFLOW_LLM_URL not set. See .env.example for configuration."
+        )
     api_key = os.environ.get("CASHFLOW_LLM_KEY", "")
+    # Auth header varies by provider: Anthropic uses "x-api-key",
+    # OpenAI-compatible proxies often use "apikey" or "Authorization: Bearer"
+    api_key_header = os.environ.get("CASHFLOW_LLM_KEY_HEADER", "apikey")
     model = os.environ.get("CASHFLOW_LLM_MODEL", "claude-sonnet-4-5-20250929")
 
     confirmed = 0
@@ -110,7 +114,7 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
             try:
                 resp = client.post(
                     api_url,
-                    headers={"apikey": api_key, "Content-Type": "application/json"},
+                    headers={api_key_header: api_key, "Content-Type": "application/json"},
                     json={
                         "model": model,
                         "max_tokens": 100,
@@ -122,7 +126,12 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                raw = data["choices"][0]["message"]["content"].strip()
+                # Handle both OpenAI-compatible format (choices[]) and
+                # native Anthropic format (content[])
+                if "choices" in data:
+                    raw = data["choices"][0]["message"]["content"].strip()
+                else:
+                    raw = data["content"][0]["text"].strip()
                 # Strip markdown code fences if present
                 if raw.startswith("```"):
                     raw = re.sub(r"^```(?:json)?\n?", "", raw)
