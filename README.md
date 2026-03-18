@@ -157,3 +157,4 @@ python -m pytest tests/ -v
 - [ ] `cashflow briefing` — weekly push summary to both partners
 - [ ] LAN sync — rsync to always-on server for household dashboard access
 - [ ] Local model support — point `CASHFLOW_LLM_URL` at a vLLM or Ollama endpoint running a local open-weight model (Llama 3, Mistral, Qwen) for fully offline categorization. The OpenAI-compatible chat completions interface is already used, so any local server that speaks that protocol works without code changes.
+- [ ] Drill-down categories — click any bar in the spending chart to expand it inline into sub-categories. "Shopping $2,400" stays clean at the top level, but clicking reveals Electronics $636 (NAS drives), Kids Clothing $132 (Target receipt), Supplements $187 (Amazon Subscribe & Save), etc. Depends on Amazon EML parser and Target email receipts for item-level data. The category hierarchy (`parent_id`) is already in the DB schema.
