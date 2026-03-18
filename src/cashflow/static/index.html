@@ -53,7 +53,14 @@
     </section>
 
     <section class="chart-container" id="trend-container">
-        <h2>Monthly Trend</h2>
+        <div class="chart-header">
+            <h2>Monthly Trend</h2>
+            <div class="filter-buttons">
+                <button class="trend-filter-btn active" data-view="total">Total</button>
+                <button class="trend-filter-btn" data-view="baseline">Baseline</button>
+                <button class="trend-filter-btn" data-view="oneoffs">One-offs</button>
+            </div>
+        </div>
         <div style="height: 300px;">
             <canvas id="trend-chart"></canvas>
         </div>

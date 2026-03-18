@@ -7,6 +7,8 @@ let sortCol = 'date';
 let sortAsc = false;
 let categoryFilter = 'all'; // 'all' | 'necessity' | 'want'
 let allByCategory = [];
+let trendView = 'total'; // 'total' | 'baseline' | 'oneoffs'
+let lastYearlyData = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function fmt(n) {
@@ -197,8 +199,20 @@ function renderCategoryChart(byCategory) {
     }
 }
 
+// Trend view filter buttons
+document.querySelectorAll('.trend-filter-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        trendView = btn.dataset.view;
+        document.querySelectorAll('.trend-filter-btn').forEach(function(b) {
+            b.classList.toggle('active', b.dataset.view === trendView);
+        });
+        if (lastYearlyData) renderTrendChart(lastYearlyData);
+    });
+});
+
 // ── Render: Trend Chart ───────────────────────────────────────────────────
 function renderTrendChart(yearly) {
+    lastYearlyData = yearly;
     const now = new Date();
     const isCurrentYear = (currentYear === now.getFullYear());
     const currentM = isCurrentYear ? now.getMonth() + 1 : 12;
@@ -210,21 +224,33 @@ function renderTrendChart(yearly) {
 
     const labels = visibleMonths.map(function(m) { return monthName(m.month).slice(0, 3); });
     const spending = visibleMonths.map(function(m, i) {
-        // Future months: null (not zero) so Chart.js doesn't draw them
         const mo = visibleMonths[i].month;
-        return (isCurrentYear && mo > currentM) ? null : m.spending;
+        if (isCurrentYear && mo > currentM) return null;
+        if (trendView === 'baseline') return m.spending_baseline || m.spending;
+        if (trendView === 'oneoffs') return m.spending_oneoffs || 0;
+        return m.spending;
     });
     const income = visibleMonths.map(function(m, i) {
         const mo = visibleMonths[i].month;
-        return (isCurrentYear && mo > currentM) ? null : m.income;
+        if (isCurrentYear && mo > currentM) return null;
+        if (trendView === 'oneoffs') return null; // hide income in one-offs view
+        return m.income;
     });
     const net = visibleMonths.map(function(m, i) {
         const mo = visibleMonths[i].month;
-        return (isCurrentYear && mo > currentM) ? null : m.surplus;
+        if (isCurrentYear && mo > currentM) return null;
+        if (trendView === 'baseline') return (m.income - (m.spending_baseline || m.spending));
+        if (trendView === 'oneoffs') return null;
+        return m.surplus;
     });
+
+    const spendingLabel = trendView === 'baseline' ? 'Baseline Spend'
+        : trendView === 'oneoffs' ? 'One-off Spend'
+        : 'Spending';
 
     if (trendChart) {
         trendChart.data.labels = labels;
+        trendChart.data.datasets[0].label = spendingLabel;
         trendChart.data.datasets[0].data = spending;
         trendChart.data.datasets[1].data = income;
         trendChart.data.datasets[2].data = net;
@@ -236,7 +262,7 @@ function renderTrendChart(yearly) {
                 labels: labels,
                 datasets: [
                     {
-                        label: 'Spending',
+                        label: spendingLabel,
                         data: spending,
                         borderColor: '#f87171',
                         backgroundColor: 'rgba(248,113,113,0.08)',

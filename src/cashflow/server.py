@@ -153,7 +153,25 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
                 "WHERE strftime('%Y', date) = ? AND strftime('%m', date) = ?",
                 (str(year), f"{mo:02d}"),
             ).fetchone()["total"]
-            months.append({"month": mo, "spending": round(sp, 2), "income": round(inc, 2), "surplus": round(inc - sp, 2)})
+                sp_baseline = conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) as total FROM transactions "
+                "WHERE canonical_id IS NULL AND is_one_off = 0 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
+                (str(year), f"{mo:02d}"),
+            ).fetchone()["total"]
+            sp_oneoffs = conn.execute(
+                "SELECT COALESCE(SUM(amount), 0) as total FROM transactions "
+                "WHERE canonical_id IS NULL AND is_one_off = 1 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
+                (str(year), f"{mo:02d}"),
+            ).fetchone()["total"]
+            months.append({
+                "month": mo,
+                "spending": round(sp, 2),
+                "spending_baseline": round(sp_baseline, 2),
+                "spending_oneoffs": round(sp_oneoffs, 2),
+                "income": round(inc, 2),
+                "surplus": round(inc - sp, 2),
+                "surplus_baseline": round(inc - sp_baseline, 2),
+            })
         ytd_income = sum(m["income"] for m in months)
         ytd_spending = sum(m["spending"] for m in months)
         conn.close()
