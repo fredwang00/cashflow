@@ -201,6 +201,38 @@ def review(ctx):
     click.echo(f"\nReviewed {reviewed} transactions.")
 
 @cli.command()
+@click.argument("query")
+@click.option("--year", type=int, default=None, help="Filter by year.")
+@click.option("--limit", type=int, default=20, help="Max results.")
+@click.pass_context
+def find(ctx, query, year, limit):
+    """Search transactions by merchant or description."""
+    conn = ctx.obj["conn"]
+    sql = (
+        "SELECT t.id, t.date, t.amount, t.merchant, t.description, c.name as category "
+        "FROM transactions t LEFT JOIN categories c ON t.category_id = c.id "
+        "WHERE t.canonical_id IS NULL AND (LOWER(t.merchant) LIKE ? OR LOWER(t.description) LIKE ?)"
+    )
+    params = [f"%{query.lower()}%", f"%{query.lower()}%"]
+    if year:
+        sql += " AND strftime('%Y', t.date) = ?"
+        params.append(str(year))
+    sql += " ORDER BY t.date DESC LIMIT ?"
+    params.append(limit)
+
+    rows = conn.execute(sql, params).fetchall()
+    if not rows:
+        click.secho(f"No transactions matching '{query}'.", fg="yellow")
+        return
+
+    click.echo(f"\n{'ID':>6}  {'Date':<12}  {'Amount':>10}  {'Category':<20}  Merchant")
+    click.echo("-" * 80)
+    for r in rows:
+        cat = r["category"] or "?"
+        click.echo(f"{r['id']:>6}  {r['date']:<12}  ${r['amount']:>9,.2f}  {cat:<20}  {r['merchant'][:30]}")
+
+
+@cli.command()
 @click.argument("txn_id", type=int)
 @click.option("--one-off", type=str, help="Label this transaction as a one-off expense.")
 @click.pass_context
