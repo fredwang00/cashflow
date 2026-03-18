@@ -50,6 +50,14 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         review_count = conn.execute(
             "SELECT COUNT(*) as c FROM transactions WHERE canonical_id IS NULL AND status = 'pending'"
         ).fetchone()["c"]
+        review_uncategorized = conn.execute(
+            "SELECT COUNT(*) as c FROM transactions WHERE canonical_id IS NULL AND status = 'pending' AND category_id IS NULL"
+        ).fetchone()["c"]
+        review_low_confidence = review_count - review_uncategorized
+
+        last_import = conn.execute(
+            "SELECT MAX(last_sync) as t FROM ingest_state WHERE last_sync IS NOT NULL"
+        ).fetchone()["t"]
 
         ceiling_row = conn.execute("SELECT amount FROM goals WHERE type = 'ceiling'").fetchone()
         ceiling = ceiling_row["amount"] if ceiling_row else 12000.0
@@ -75,6 +83,9 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
             "ytd_surplus": round(income - ytd_spending, 2),
             "surplus_goal": surplus_goal,
             "review_queue": review_count,
+            "review_uncategorized": review_uncategorized,
+            "review_low_confidence": review_low_confidence,
+            "last_import": last_import,
         }
 
     @app.get("/api/monthly/{year}/{month}")
@@ -89,7 +100,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
             (str(year), f"{month:02d}"),
         ).fetchall()
         by_category = conn.execute(
-            "SELECT c.name as category, ROUND(SUM(t.amount), 2) as total "
+            "SELECT c.name as category, c.type as category_type, ROUND(SUM(t.amount), 2) as total "
             "FROM transactions t LEFT JOIN categories c ON t.category_id = c.id "
             "WHERE t.canonical_id IS NULL AND strftime('%Y', t.date) = ? AND strftime('%m', t.date) = ? "
             "GROUP BY c.name ORDER BY total DESC",

@@ -39,7 +39,14 @@
     </section>
 
     <section class="chart-container" id="category-container">
-        <h2>Spending by Category</h2>
+        <div class="chart-header">
+            <h2>Spending by Category</h2>
+            <div class="filter-buttons">
+                <button class="cat-filter-btn active" data-filter="all">All</button>
+                <button class="cat-filter-btn" data-filter="necessity">Necessities</button>
+                <button class="cat-filter-btn" data-filter="want">Wants</button>
+            </div>
+        </div>
         <div id="category-chart-wrap">
             <canvas id="category-chart"></canvas>
         </div>
@@ -67,6 +74,10 @@
             <tbody id="tx-body"></tbody>
         </table>
     </section>
+
+    <footer>
+        <span id="freshness"></span>
+    </footer>
 
     <script src="/static/app.js"></script>
 </body>

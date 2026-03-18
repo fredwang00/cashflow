@@ -204,6 +204,61 @@ td.amount.negative {
 .badge-wife   { background: #3b1f4b; color: #c084fc; }
 .badge-shared { background: #1a3329; color: #6ee7b7; }
 
+/* Chart header with filter buttons */
+.chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.chart-header h2 {
+    margin-bottom: 0;
+}
+
+.filter-buttons {
+    display: flex;
+    gap: 6px;
+}
+
+.cat-filter-btn {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #64748b;
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.15s;
+}
+
+.cat-filter-btn:hover {
+    border-color: #60a5fa;
+    color: #e2e8f0;
+}
+
+.cat-filter-btn.active {
+    background: #1e3a5f;
+    border-color: #60a5fa;
+    color: #60a5fa;
+}
+
+/* Uncategorized badge */
+.badge-uncategorized {
+    background: #1e1b4b;
+    color: #94a3b8;
+    font-style: italic;
+}
+
+/* Footer */
+footer {
+    text-align: right;
+    padding: 16px 0 8px;
+    font-size: 0.78rem;
+    color: #475569;
+}
+
 /* Color utilities */
 .color-green  { color: #6ee7b7; }
 .color-yellow { color: #fbbf24; }

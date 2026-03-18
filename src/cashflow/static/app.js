@@ -5,6 +5,8 @@ let categoryChart = null;
 let trendChart = null;
 let sortCol = 'date';
 let sortAsc = false;
+let categoryFilter = 'all'; // 'all' | 'necessity' | 'want'
+let allByCategory = [];
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function fmt(n) {
@@ -37,16 +39,29 @@ function badgeEl(who) {
     return span;
 }
 
+function timeAgo(isoStr) {
+    if (!isoStr) return 'never';
+    const diff = Date.now() - new Date(isoStr).getTime();
+    const h = Math.floor(diff / 3600000);
+    const d = Math.floor(h / 24);
+    if (d > 1) return d + ' days ago';
+    if (d === 1) return 'yesterday';
+    if (h > 1) return h + ' hours ago';
+    if (h === 1) return '1 hour ago';
+    return 'just now';
+}
+
 // ── DOM refs ──────────────────────────────────────────────────────────────
-const $monthLabel   = document.getElementById('month-label');
-const $burnAmount   = document.getElementById('burn-amount');
-const $burnBar      = document.getElementById('burn-bar');
-const $burnDetail   = document.getElementById('burn-detail');
-const $surplusAmt   = document.getElementById('surplus-amount');
-const $surplusDetail= document.getElementById('surplus-detail');
-const $reviewCount  = document.getElementById('review-count');
-const $reviewDetail = document.getElementById('review-detail');
-const $txBody       = document.getElementById('tx-body');
+const $monthLabel    = document.getElementById('month-label');
+const $burnAmount    = document.getElementById('burn-amount');
+const $burnBar       = document.getElementById('burn-bar');
+const $burnDetail    = document.getElementById('burn-detail');
+const $surplusAmt    = document.getElementById('surplus-amount');
+const $surplusDetail = document.getElementById('surplus-detail');
+const $reviewCount   = document.getElementById('review-count');
+const $reviewDetail  = document.getElementById('review-detail');
+const $txBody        = document.getElementById('tx-body');
+const $freshness     = document.getElementById('freshness');
 
 // ── API ───────────────────────────────────────────────────────────────────
 async function fetchJson(url) {
@@ -55,7 +70,7 @@ async function fetchJson(url) {
     return res.json();
 }
 
-// ── Status state (from /api/status, used for review queue + ceiling/goal) ─
+// ── Status state ──────────────────────────────────────────────────────────
 let statusData = { ceiling: 12000, surplus_goal: 40000, review_queue: 0 };
 
 function renderStatus(s) {
@@ -63,10 +78,24 @@ function renderStatus(s) {
     renderBurnCard(s.month_spending, s.ceiling, s.days_left);
     renderSurplusCard(s.ytd_surplus, s.surplus_goal);
 
-    const queueCount = s.review_queue || 0;
-    $reviewCount.textContent = queueCount;
-    $reviewCount.className = 'big-number ' + (queueCount > 0 ? 'color-yellow' : 'color-green');
-    $reviewDetail.textContent = queueCount === 0 ? 'All clear' : 'items need review';
+    const total = s.review_queue || 0;
+    const uncat = s.review_uncategorized || 0;
+    const lowConf = s.review_low_confidence || 0;
+    $reviewCount.textContent = total;
+    $reviewCount.className = 'big-number ' + (total > 0 ? 'color-yellow' : 'color-green');
+    if (total === 0) {
+        $reviewDetail.textContent = 'All clear';
+    } else if (uncat > 0 && lowConf > 0) {
+        $reviewDetail.textContent = uncat + ' uncategorized · ' + lowConf + ' low-confidence';
+    } else if (uncat > 0) {
+        $reviewDetail.textContent = uncat + ' need a category';
+    } else {
+        $reviewDetail.textContent = lowConf + ' low-confidence — run cashflow review';
+    }
+
+    if ($freshness) {
+        $freshness.textContent = 'Last import: ' + timeAgo(s.last_import);
+    }
 }
 
 function renderBurnCard(spending, ceiling, daysLeft) {
@@ -77,7 +106,7 @@ function renderBurnCard(spending, ceiling, daysLeft) {
     $burnBar.style.width = Math.min(pct, 100) + '%';
     $burnBar.className = 'progress-bar-fill ' + color;
     var detail = Math.round(pct) + '% of ' + fmt(ceiling) + ' ceiling';
-    if (daysLeft !== null) detail += ' \u00b7 ' + daysLeft + ' days left';
+    if (daysLeft !== null) detail += ' · ' + daysLeft + ' days left';
     $burnDetail.textContent = detail;
 }
 
@@ -86,7 +115,7 @@ function renderSurplusCard(surplus, goal) {
     $surplusAmt.className = 'big-number ' + (surplus >= 0 ? 'color-green' : 'color-red');
     const monthsElapsed = currentMonth;
     const pace = monthsElapsed > 0 ? (surplus / monthsElapsed) * 12 : 0;
-    $surplusDetail.textContent = 'Goal: ' + fmt(goal) + ' \u00b7 On pace: ' + fmt(pace);
+    $surplusDetail.textContent = 'Goal: ' + fmt(goal) + ' · On pace: ' + fmt(pace);
 }
 
 // ── Render: Category Chart ────────────────────────────────────────────────
@@ -96,10 +125,26 @@ const CATEGORY_COLORS = [
     '#e879f9', '#facc15',
 ];
 
+function applyFilterAndRender() {
+    let filtered = allByCategory;
+    if (categoryFilter === 'necessity') {
+        filtered = allByCategory.filter(function(c) { return c.category_type === 'necessity'; });
+    } else if (categoryFilter === 'want') {
+        filtered = allByCategory.filter(function(c) { return c.category_type === 'want'; });
+    }
+    renderCategoryChart(filtered);
+
+    // Update filter button active states
+    document.querySelectorAll('.cat-filter-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.filter === categoryFilter);
+    });
+}
+
 function renderCategoryChart(byCategory) {
     const sorted = [...byCategory].sort(function(a, b) { return b.total - a.total; });
     const labels = sorted.map(function(c) { return c.category || 'Uncategorized'; });
     const data = sorted.map(function(c) { return c.total; });
+    const colors = labels.map(function(_, i) { return CATEGORY_COLORS[i % CATEGORY_COLORS.length]; });
 
     var wrap = document.getElementById('category-chart-wrap');
     var chartHeight = Math.max(200, sorted.length * 28 + 20);
@@ -109,18 +154,14 @@ function renderCategoryChart(byCategory) {
     if (categoryChart) {
         categoryChart.data.labels = labels;
         categoryChart.data.datasets[0].data = data;
-        categoryChart.data.datasets[0].backgroundColor = labels.map(function(_, i) { return CATEGORY_COLORS[i % CATEGORY_COLORS.length]; });
+        categoryChart.data.datasets[0].backgroundColor = colors;
         categoryChart.update();
     } else {
         categoryChart = new Chart(canvas, {
             type: 'bar',
             data: {
                 labels: labels,
-                datasets: [{
-                    data: data,
-                    backgroundColor: labels.map(function(_, i) { return CATEGORY_COLORS[i % CATEGORY_COLORS.length]; }),
-                    borderRadius: 4,
-                }],
+                datasets: [{ data: data, backgroundColor: colors, borderRadius: 4 }],
             },
             options: {
                 indexAxis: 'y',
@@ -135,10 +176,7 @@ function renderCategoryChart(byCategory) {
                         ticks: { callback: function(v) { return fmt(v); }, color: '#94a3b8' },
                         grid: { color: '#334155' },
                     },
-                    y: {
-                        ticks: { color: '#e2e8f0' },
-                        grid: { display: false },
-                    },
+                    y: { ticks: { color: '#e2e8f0' }, grid: { display: false } },
                 },
             },
         });
@@ -147,14 +185,35 @@ function renderCategoryChart(byCategory) {
 
 // ── Render: Trend Chart ───────────────────────────────────────────────────
 function renderTrendChart(yearly) {
-    var labels = yearly.months.map(function(m) { return monthName(m.month).slice(0, 3); });
-    var spending = yearly.months.map(function(m) { return m.spending; });
-    var income = yearly.months.map(function(m) { return m.income; });
+    const now = new Date();
+    const isCurrentYear = (currentYear === now.getFullYear());
+    const currentM = isCurrentYear ? now.getMonth() + 1 : 12;
+
+    // Only show months with data or up to current month
+    const visibleMonths = yearly.months.filter(function(m) {
+        return m.spending > 0 || m.income > 0 || m.month <= currentM;
+    });
+
+    const labels = visibleMonths.map(function(m) { return monthName(m.month).slice(0, 3); });
+    const spending = visibleMonths.map(function(m, i) {
+        // Future months: null (not zero) so Chart.js doesn't draw them
+        const mo = visibleMonths[i].month;
+        return (isCurrentYear && mo > currentM) ? null : m.spending;
+    });
+    const income = visibleMonths.map(function(m, i) {
+        const mo = visibleMonths[i].month;
+        return (isCurrentYear && mo > currentM) ? null : m.income;
+    });
+    const net = visibleMonths.map(function(m, i) {
+        const mo = visibleMonths[i].month;
+        return (isCurrentYear && mo > currentM) ? null : m.surplus;
+    });
 
     if (trendChart) {
         trendChart.data.labels = labels;
         trendChart.data.datasets[0].data = spending;
         trendChart.data.datasets[1].data = income;
+        trendChart.data.datasets[2].data = net;
         trendChart.update();
     } else {
         trendChart = new Chart(document.getElementById('trend-chart'), {
@@ -166,19 +225,32 @@ function renderTrendChart(yearly) {
                         label: 'Spending',
                         data: spending,
                         borderColor: '#f87171',
-                        backgroundColor: 'rgba(248,113,113,0.1)',
-                        fill: true,
+                        backgroundColor: 'rgba(248,113,113,0.08)',
+                        fill: false,
                         tension: 0.3,
                         pointRadius: 3,
+                        spanGaps: false,
                     },
                     {
                         label: 'Income',
                         data: income,
                         borderColor: '#6ee7b7',
-                        backgroundColor: 'rgba(110,231,183,0.1)',
-                        fill: true,
+                        backgroundColor: 'rgba(110,231,183,0.08)',
+                        fill: false,
                         tension: 0.3,
                         pointRadius: 3,
+                        spanGaps: false,
+                    },
+                    {
+                        label: 'Net',
+                        data: net,
+                        borderColor: '#60a5fa',
+                        backgroundColor: 'rgba(96,165,250,0.08)',
+                        fill: false,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        borderDash: [4, 3],
+                        spanGaps: false,
                     },
                 ],
             },
@@ -243,7 +315,14 @@ function renderTxRows(txs) {
         tr.appendChild(tdAmt);
 
         var tdCat = document.createElement('td');
-        tdCat.textContent = tx.category || 'Uncategorized';
+        if (!tx.category) {
+            var span = document.createElement('span');
+            span.className = 'badge badge-uncategorized';
+            span.textContent = 'Uncategorized';
+            tdCat.appendChild(span);
+        } else {
+            tdCat.textContent = tx.category;
+        }
         tr.appendChild(tdCat);
 
         var tdWho = document.createElement('td');
@@ -267,6 +346,14 @@ document.querySelectorAll('#tx-table thead th').forEach(function(th) {
         document.querySelectorAll('#tx-table thead th').forEach(function(h) { h.removeAttribute('data-sort'); });
         th.setAttribute('data-sort', sortAsc ? 'asc' : 'desc');
         sortTransactions();
+    });
+});
+
+// Category filter buttons
+document.querySelectorAll('.cat-filter-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        categoryFilter = btn.dataset.filter;
+        applyFilterAndRender();
     });
 });
 
@@ -299,21 +386,20 @@ async function loadMonth() {
     var monthly = results[0];
     var yearly = results[1];
 
-    // Update burn card from selected month's data
     var now = new Date();
     var isCurrentMonth = (currentYear === now.getFullYear() && currentMonth === now.getMonth() + 1);
     var daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
     var daysLeft = isCurrentMonth ? daysInMonth - now.getDate() : null;
     renderBurnCard(monthly.total, statusData.ceiling, daysLeft);
 
-    // Update surplus from yearly data (cumulative through selected month)
     var ytdSurplus = 0;
     for (var i = 0; i < currentMonth; i++) {
         ytdSurplus += yearly.months[i].surplus;
     }
     renderSurplusCard(ytdSurplus, statusData.surplus_goal);
 
-    renderCategoryChart(monthly.by_category || []);
+    allByCategory = monthly.by_category || [];
+    applyFilterAndRender();
     renderTransactions(monthly.transactions || []);
     renderTrendChart(yearly);
 }
@@ -329,7 +415,8 @@ async function init() {
         ]);
 
         renderStatus(results[0]);
-        renderCategoryChart(results[1].by_category || []);
+        allByCategory = results[1].by_category || [];
+        applyFilterAndRender();
         renderTransactions(results[1].transactions || []);
         renderTrendChart(results[2]);
     } catch (err) {
