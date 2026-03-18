@@ -52,7 +52,7 @@ cashflow dashboard
 | Target RedCard | CSV | Uppercase `.CSV` extension |
 | Apple Card | CSV | Has cardholder name (per-person tracking) |
 | Citi/Costco | Screen scrape | Per-person tracking |
-| Capital One | Screen scrape | Year inferred from statement boundaries |
+| Capital One (Venture + Wendy) | CSV export | Card number → who attribution (fred/wife) |
 | Amazon orders | Screen scrape | Item-level reconciliation with Chase |
 
 Drop files in `~/cashflow/inbox/` or pass them directly to `cashflow ingest --files`.

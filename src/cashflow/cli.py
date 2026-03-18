@@ -9,7 +9,7 @@ from cashflow.parsers.amazon import parse_amazon_orders
 from cashflow.parsers.target import parse_target_csv
 from cashflow.parsers.bofa_cc import parse_bofa_cc_csv
 from cashflow.parsers.bofa_checking import parse_bofa_checking_csv
-from cashflow.parsers.capital_one import parse_capital_one
+from cashflow.parsers.capital_one_csv import parse_capital_one_csv
 from cashflow.parsers.citi import parse_citi
 from cashflow.parsers.apple_card import parse_apple_card_csv
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
@@ -74,11 +74,11 @@ def ingest(ctx, files, email, auto):
         elif "capital" in csv_file.name.lower():
             if "wendy" in csv_file.name.lower():
                 acct = "Capital One Wendy"
-            elif "venture" in csv_file.name.lower() or "4429" in csv_file.name.lower():
-                acct = "Capital One Venture"
             else:
-                acct = "Capital One"
-            txns = parse_capital_one(csv_file, account_name=acct)
+                acct = "Capital One Venture"
+            txns = parse_capital_one_csv(csv_file)
+            for t in txns:
+                t.account_name = acct
         elif "citi" in csv_file.name.lower():
             txns = parse_citi(csv_file)
         elif "apple" in csv_file.name.lower():
