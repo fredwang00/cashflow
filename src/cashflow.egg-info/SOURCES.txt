@@ -1,9 +1,0 @@
-pyproject.toml
-src/cashflow/__init__.py
-src/cashflow/cli.py
-src/cashflow.egg-info/PKG-INFO
-src/cashflow.egg-info/SOURCES.txt
-src/cashflow.egg-info/dependency_links.txt
-src/cashflow.egg-info/entry_points.txt
-src/cashflow.egg-info/requires.txt
-src/cashflow.egg-info/top_level.txt
