@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from cashflow.parsers.expense_report import ExpenseRow
 
-_DATE_WINDOW = 2  # days of tolerance for card posting delay
+_DATE_WINDOW = 7  # days of tolerance for card posting delay
 
 
 def _find_transaction(conn, row):

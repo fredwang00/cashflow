@@ -61,8 +61,8 @@ def ingest(ctx, files, email, auto, expense_report):
             if unmatched > 0:
                 from datetime import timedelta
                 for row in rows:
-                    start = (row.date - timedelta(days=2)).isoformat()
-                    end = (row.date + timedelta(days=2)).isoformat()
+                    start = (row.date - timedelta(days=7)).isoformat()
+                    end = (row.date + timedelta(days=7)).isoformat()
                     txn = conn.execute(
                         "SELECT id FROM transactions WHERE date BETWEEN ? AND ? AND ABS(amount - ?) < 0.005 AND canonical_id IS NULL",
                         (start, end, row.amount),

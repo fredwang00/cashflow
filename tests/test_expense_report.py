@@ -128,12 +128,12 @@ def test_match_fuzzy_date_prefers_exact(tmp_path):
 
 
 def test_match_fuzzy_date_no_false_match(tmp_path):
-    """Fuzzy date should not match beyond 2-day window."""
+    """Fuzzy date should not match beyond 7-day window."""
     conn = _make_db(tmp_path)
     from cashflow.parsers.expense_report import ExpenseRow
 
     txns = [
-        ParsedTransaction(date=date(2025, 4, 16), amount=53.94, description="UBER *TRIP", merchant="Uber", source_id="t1", source_type="csv", account_name="Chase Prime Visa"),
+        ParsedTransaction(date=date(2025, 4, 20), amount=53.94, description="UBER *TRIP", merchant="Uber", source_id="t1", source_type="csv", account_name="Chase Prime Visa"),
     ]
     store_transactions(conn, txns)
 
