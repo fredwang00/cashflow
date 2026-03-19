@@ -29,6 +29,12 @@ def test_budgets_unique_constraint():
         conn.execute("INSERT INTO budgets (category_id, year, month, amount) VALUES (1, 2026, 3, 1500.0)")
     conn.close()
 
+def test_is_reimbursed_column_exists(tmp_path):
+    from cashflow.db import get_connection
+    conn = get_connection(tmp_path / "test.db")
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(transactions)").fetchall()]
+    assert "is_reimbursed" in cols
+
 def test_canonical_id_self_reference():
     conn = sqlite3.connect(":memory:")
     create_schema(conn)

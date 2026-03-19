@@ -9,7 +9,14 @@ def get_connection(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     create_schema(conn)
+    _migrate(conn)
     return conn
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(transactions)").fetchall()]
+    if "is_reimbursed" not in cols:
+        conn.execute("ALTER TABLE transactions ADD COLUMN is_reimbursed BOOLEAN NOT NULL DEFAULT 0")
+        conn.commit()
 
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
@@ -40,6 +47,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     category_id INTEGER REFERENCES categories(id),
     is_one_off BOOLEAN NOT NULL DEFAULT 0,
     one_off_label TEXT,
+    is_reimbursed BOOLEAN NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed')),
     confidence INTEGER NOT NULL DEFAULT 0,
     who TEXT NOT NULL DEFAULT 'shared' CHECK (who IN ('fred', 'wife', 'shared')),
