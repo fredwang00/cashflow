@@ -88,6 +88,59 @@ def test_yearly_endpoint(tmp_path):
     assert "ytd_surplus" in data
 
 
+def test_yearly_baseline_excludes_reimbursed(tmp_path):
+    db_path = tmp_path / "test.db"
+    _seed_and_populate(db_path)
+
+    # Flag one transaction as reimbursed
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("UPDATE transactions SET is_reimbursed = 1 WHERE source_id = 'test-1'")
+    conn.commit()
+    conn.close()
+
+    app = _make_app(db_path)
+    client = TestClient(app)
+    resp = client.get("/api/yearly/2026")
+    data = resp.json()
+    march = data["months"][2]  # March = index 2
+    # Baseline should exclude the $1500 reimbursed Kroger transaction
+    assert march["spending_baseline"] < march["spending"]
+
+
+def test_toggle_reimbursed(tmp_path):
+    db_path = tmp_path / "test.db"
+    _seed_and_populate(db_path)
+    app = _make_app(db_path)
+    client = TestClient(app)
+
+    resp = client.post("/api/transactions/1/toggle-reimbursed")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["is_reimbursed"] is True
+
+    # Toggle off
+    resp = client.post("/api/transactions/1/toggle-reimbursed")
+    data = resp.json()
+    assert data["is_reimbursed"] is False
+
+
+def test_monthly_includes_is_reimbursed(tmp_path):
+    db_path = tmp_path / "test.db"
+    _seed_and_populate(db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("UPDATE transactions SET is_reimbursed = 1 WHERE source_id = 'test-1'")
+    conn.commit()
+    conn.close()
+
+    app = _make_app(db_path)
+    client = TestClient(app)
+    resp = client.get("/api/monthly/2026/3")
+    data = resp.json()
+    reimbursed_txns = [t for t in data["transactions"] if t.get("is_reimbursed")]
+    assert len(reimbursed_txns) == 1
+
+
 def test_index_serves_html(tmp_path):
     db_path = tmp_path / "test.db"
     _seed_and_populate(db_path)

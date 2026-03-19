@@ -93,7 +93,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         conn = _get_db(db_path)
         txns = conn.execute(
             "SELECT t.id, t.date, t.amount, t.merchant, t.description, t.status, t.who, "
-            "t.is_one_off, t.one_off_label, c.name as category "
+            "t.is_one_off, t.one_off_label, t.is_reimbursed, c.name as category "
             "FROM transactions t LEFT JOIN categories c ON t.category_id = c.id "
             "WHERE t.canonical_id IS NULL AND strftime('%Y', t.date) = ? AND strftime('%m', t.date) = ? "
             "ORDER BY t.date DESC",
@@ -120,7 +120,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         if month:
             rows = conn.execute(
                 "SELECT t.id, t.date, t.amount, t.merchant, t.description, t.status, t.who, "
-                "t.is_one_off, t.one_off_label, c.name as category "
+                "t.is_one_off, t.one_off_label, t.is_reimbursed, c.name as category "
                 "FROM transactions t LEFT JOIN categories c ON t.category_id = c.id "
                 "WHERE t.canonical_id IS NULL AND strftime('%Y', t.date) = ? AND strftime('%m', t.date) = ? "
                 "ORDER BY t.date DESC LIMIT ?",
@@ -129,7 +129,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         else:
             rows = conn.execute(
                 "SELECT t.id, t.date, t.amount, t.merchant, t.description, t.status, t.who, "
-                "t.is_one_off, t.one_off_label, c.name as category "
+                "t.is_one_off, t.one_off_label, t.is_reimbursed, c.name as category "
                 "FROM transactions t LEFT JOIN categories c ON t.category_id = c.id "
                 "WHERE t.canonical_id IS NULL AND strftime('%Y', t.date) = ? "
                 "ORDER BY t.date DESC LIMIT ?",
@@ -155,7 +155,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
             ).fetchone()["total"]
             sp_baseline = conn.execute(
                 "SELECT COALESCE(SUM(amount), 0) as total FROM transactions "
-                "WHERE canonical_id IS NULL AND is_one_off = 0 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
+                "WHERE canonical_id IS NULL AND is_one_off = 0 AND is_reimbursed = 0 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
                 (str(year), f"{mo:02d}"),
             ).fetchone()["total"]
             sp_oneoffs = conn.execute(
@@ -194,6 +194,21 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         conn.commit()
         conn.close()
         return {"id": txn_id, "is_one_off": bool(new_val)}
+
+    @app.post("/api/transactions/{txn_id}/toggle-reimbursed")
+    def toggle_reimbursed(txn_id: int):
+        """Toggle is_reimbursed on a transaction."""
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        txn = conn.execute("SELECT id, is_reimbursed FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+        if not txn:
+            conn.close()
+            return {"error": "not found"}
+        new_val = 0 if txn["is_reimbursed"] else 1
+        conn.execute("UPDATE transactions SET is_reimbursed = ? WHERE id = ?", (new_val, txn_id))
+        conn.commit()
+        conn.close()
+        return {"id": txn_id, "is_reimbursed": bool(new_val)}
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     return app
