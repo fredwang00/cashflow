@@ -54,6 +54,7 @@ cashflow dashboard
 | Citi/Costco | Screen scrape | Per-person tracking |
 | Capital One (Venture + Wendy) | CSV export | Card number → who attribution (fred/wife) |
 | Amazon orders | Screen scrape | Item-level reconciliation with Chase |
+| Expense reports | .xlsx | Matches to existing transactions by date + amount |
 
 Drop files in `~/cashflow/inbox/` or pass them directly to `cashflow ingest --files`.
 
@@ -79,9 +80,14 @@ cashflow find "marriott"                    # search by merchant or description
 cashflow find "kroger" --year 2025          # filter by year
 cashflow find "amazon" --limit 5            # show fewer results
 
-# Tagging
+# Tagging & recategorizing
 cashflow find "luvansh"                     # get the transaction ID first
 cashflow tag 1234 --one-off "Diamond bracelet - wife Xmas gift"
+cashflow recategorize 2432 "Consumer Electronics"  # override category for one txn
+
+# Expense reports (reimbursements)
+cashflow ingest --expense-report ~/Downloads/expense-reports-2025/
+cashflow ingest --expense-report ~/Downloads/core_week.xlsx  # single file
 
 # Dashboard
 cashflow dashboard                    # Opens http://localhost:8080
