@@ -394,6 +394,26 @@ function renderTxRows(txs) {
         tdOneOff.appendChild(btn);
         tr.appendChild(tdOneOff);
 
+        var tdReimb = document.createElement('td');
+        var rBtn = document.createElement('button');
+        rBtn.className = 'oneoff-btn' + (tx.is_reimbursed ? ' active' : '');
+        rBtn.textContent = tx.is_reimbursed ? '$' : '-';
+        rBtn.title = tx.is_reimbursed ? 'Reimbursed' : 'Mark as reimbursed';
+        rBtn.dataset.id = tx.id;
+        rBtn.addEventListener('click', function() {
+            var id = parseInt(this.dataset.id);
+            fetch('/api/transactions/' + id + '/toggle-reimbursed', { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    rBtn.classList.toggle('active', data.is_reimbursed);
+                    rBtn.textContent = data.is_reimbursed ? '$' : '-';
+                    rBtn.title = data.is_reimbursed ? 'Reimbursed' : 'Mark as reimbursed';
+                    tx.is_reimbursed = data.is_reimbursed ? 1 : 0;
+                });
+        });
+        tdReimb.appendChild(rBtn);
+        tr.appendChild(tdReimb);
+
         $txBody.appendChild(tr);
     }
 }
