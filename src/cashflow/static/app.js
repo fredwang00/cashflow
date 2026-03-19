@@ -337,8 +337,8 @@ function renderTxRows(txs) {
     while ($txBody.firstChild) $txBody.removeChild($txBody.firstChild);
 
     var rows = txs.slice(0, 200);
-    for (var i = 0; i < rows.length; i++) {
-        var tx = rows[i];
+    for (let i = 0; i < rows.length; i++) {
+        let tx = rows[i];
         var tr = document.createElement('tr');
 
         var tdDate = document.createElement('td');
@@ -370,7 +370,7 @@ function renderTxRows(txs) {
         tr.appendChild(tdWho);
 
         var tdOneOff = document.createElement('td');
-        var btn = document.createElement('button');
+        let btn = document.createElement('button');
         btn.className = 'oneoff-btn' + (tx.is_one_off ? ' active' : '');
         btn.title = tx.one_off_label || '';
         btn.textContent = tx.is_one_off ? '★' : '☆';
@@ -395,7 +395,7 @@ function renderTxRows(txs) {
         tr.appendChild(tdOneOff);
 
         var tdReimb = document.createElement('td');
-        var rBtn = document.createElement('button');
+        let rBtn = document.createElement('button');
         rBtn.className = 'oneoff-btn' + (tx.is_reimbursed ? ' active' : '');
         rBtn.textContent = tx.is_reimbursed ? '$' : '-';
         rBtn.title = tx.is_reimbursed ? 'Reimbursed' : 'Mark as reimbursed';

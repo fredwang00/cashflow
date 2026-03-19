@@ -127,7 +127,7 @@ See `.env.example` for a template.
 pip install -e ".[dev]"
 ```
 
-Python 3.12+, FastAPI, uvicorn, httpx, Click, Chart.js (CDN).
+Python 3.12+, FastAPI, uvicorn, httpx, Click, openpyxl, Chart.js (CDN).
 
 ## Categorization
 
@@ -159,7 +159,7 @@ The database lives in `~/.cashflow/cashflow.db` — outside the repo, never comm
 python -m pytest tests/ -v
 ```
 
-136 tests across parsers, ingestion, categorization, API endpoints, and CLI commands.
+151 tests across parsers, ingestion, categorization, API endpoints, and CLI commands.
 
 ## What's next
 
