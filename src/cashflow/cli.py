@@ -47,13 +47,25 @@ def ingest(ctx, files, email, auto, expense_report):
         for xlsx in xlsx_files:
             click.echo(f"Matching expense report: {xlsx.name}...")
             rows = parse_expense_report(xlsx)
-            matched, unmatched = match_expense_report(conn, rows)
-            click.secho(f"  {matched} matched, {unmatched} unmatched", fg="green" if unmatched == 0 else "yellow")
+            matched, already, unmatched = match_expense_report(conn, rows)
+            parts = []
+            if matched:
+                parts.append(f"{matched} matched")
+            if already:
+                parts.append(f"{already} already reimbursed")
+            if unmatched:
+                parts.append(f"{unmatched} unmatched")
+            if not parts:
+                parts.append("no rows")
+            click.secho(f"  {', '.join(parts)}", fg="green" if unmatched == 0 else "yellow")
             if unmatched > 0:
+                from datetime import timedelta
                 for row in rows:
+                    start = (row.date - timedelta(days=2)).isoformat()
+                    end = (row.date + timedelta(days=2)).isoformat()
                     txn = conn.execute(
-                        "SELECT id FROM transactions WHERE date = ? AND ABS(amount - ?) < 0.005 AND canonical_id IS NULL AND is_reimbursed = 0",
-                        (row.date.isoformat(), row.amount),
+                        "SELECT id FROM transactions WHERE date BETWEEN ? AND ? AND ABS(amount - ?) < 0.005 AND canonical_id IS NULL",
+                        (start, end, row.amount),
                     ).fetchone()
                     if not txn:
                         click.secho(f"    No match: {row.date} ${row.amount:,.2f} {row.vendor}", fg="yellow")
