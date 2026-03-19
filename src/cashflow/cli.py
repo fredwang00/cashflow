@@ -12,6 +12,8 @@ from cashflow.parsers.bofa_checking import parse_bofa_checking_csv
 from cashflow.parsers.capital_one_csv import parse_capital_one_csv
 from cashflow.parsers.citi import parse_citi
 from cashflow.parsers.apple_card import parse_apple_card_csv
+from cashflow.parsers.expense_report import parse_expense_report
+from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
@@ -31,10 +33,31 @@ def cli(ctx, db):
 @click.option("--files", type=click.Path(exists=True), help="Path to CSV inbox directory or file.")
 @click.option("--email", is_flag=True, help="Poll Gmail for new emails. (Not yet implemented.)")
 @click.option("--auto", is_flag=True, help="Run both email and file ingestion.")
+@click.option("--expense-report", type=click.Path(exists=True), help="Path to expense report .xlsx file or directory.")
 @click.pass_context
-def ingest(ctx, files, email, auto):
+def ingest(ctx, files, email, auto, expense_report):
     """Ingest transactions from CSV files or email."""
     conn = ctx.obj["conn"]
+    if expense_report:
+        er_path = Path(expense_report)
+        if er_path.is_file():
+            xlsx_files = [er_path]
+        else:
+            xlsx_files = sorted(er_path.glob("*.xlsx"))
+        for xlsx in xlsx_files:
+            click.echo(f"Matching expense report: {xlsx.name}...")
+            rows = parse_expense_report(xlsx)
+            matched, unmatched = match_expense_report(conn, rows)
+            click.secho(f"  {matched} matched, {unmatched} unmatched", fg="green" if unmatched == 0 else "yellow")
+            if unmatched > 0:
+                for row in rows:
+                    txn = conn.execute(
+                        "SELECT id FROM transactions WHERE date = ? AND ABS(amount - ?) < 0.005 AND canonical_id IS NULL AND is_reimbursed = 0",
+                        (row.date.isoformat(), row.amount),
+                    ).fetchone()
+                    if not txn:
+                        click.secho(f"    No match: {row.date} ${row.amount:,.2f} {row.vendor}", fg="yellow")
+        return
     if email or auto:
         click.echo("Email ingestion not yet implemented.")
     if not files and not auto:
@@ -236,6 +259,41 @@ def find(ctx, query, year, limit):
     for r in rows:
         cat = r["category"] or "?"
         click.echo(f"{r['id']:>6}  {r['date']:<12}  ${r['amount']:>9,.2f}  {cat:<20}  {r['merchant'][:30]}")
+
+
+@cli.command()
+@click.argument("txn_id", type=int)
+@click.argument("category", type=str)
+@click.pass_context
+def recategorize(ctx, txn_id, category):
+    """Change the category of a single transaction."""
+    conn = ctx.obj["conn"]
+
+    txn = conn.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    if not txn:
+        click.secho(f"Transaction {txn_id} not found.", fg="red")
+        return
+
+    cat = conn.execute(
+        "SELECT id, name FROM categories WHERE LOWER(name) = LOWER(?)", (category,)
+    ).fetchone()
+    if not cat:
+        click.secho(f"Category \"{category}\" not found.", fg="red")
+        click.echo("Available categories:")
+        for row in conn.execute("SELECT name FROM categories ORDER BY name"):
+            click.echo(f"  {row['name']}")
+        return
+
+    conn.execute(
+        "UPDATE transactions SET category_id = ?, status = 'confirmed' WHERE id = ?",
+        (cat["id"], txn_id),
+    )
+    conn.commit()
+    click.secho(
+        f"#{txn_id} → {cat['name']} "
+        f"(${txn['amount']:,.2f} on {txn['date']})",
+        fg="green",
+    )
 
 
 @cli.command()
