@@ -7,7 +7,7 @@ _DATE_WINDOW = 7  # days of tolerance for card posting delay
 
 
 def _find_transaction(conn, row):
-    """Find a matching transaction: exact date first, then within +/- 2 days."""
+    """Find a matching transaction: exact date first, then within +/- 7 days."""
     # Exact date match
     txn = conn.execute(
         "SELECT id, is_reimbursed FROM transactions "
@@ -18,7 +18,7 @@ def _find_transaction(conn, row):
     if txn:
         return txn
 
-    # Fuzzy date match: card may post 1-2 days after expense
+    # Fuzzy date match: card may post days before or after expense
     start = (row.date - timedelta(days=_DATE_WINDOW)).isoformat()
     end = (row.date + timedelta(days=_DATE_WINDOW)).isoformat()
     txn = conn.execute(
@@ -35,7 +35,7 @@ def match_expense_report(
 ) -> tuple[int, int, int]:
     """Match expense report rows to transactions by date + amount.
 
-    Tries exact date first, then falls back to a +/- 2 day window
+    Tries exact date first, then falls back to a +/- 7 day window
     to handle card posting delays (common with Uber, hotels, etc.).
 
     Returns (matched, already_reimbursed, unmatched).
