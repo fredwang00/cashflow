@@ -115,6 +115,45 @@ def test_ingest_expense_report(tmp_path):
     conn.close()
 
 
+def test_fees(tmp_path):
+    import sqlite3
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+
+    # Seed DB and insert fee-like transactions
+    runner.invoke(cli, ["--db", str(db_path), "status"])  # triggers seed
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys = ON")
+    acct_id = conn.execute("SELECT id FROM accounts LIMIT 1").fetchone()[0]
+    cat_id = conn.execute("SELECT id FROM categories WHERE name = 'Credit Card Fees'").fetchone()[0]
+    conn.execute(
+        "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, category_id, status, confidence, who, source_type) "
+        "VALUES ('fee-1', '2025-06-30', 95.00, 'ANNUAL FEE', 'ANNUAL FEE', ?, ?, 'confirmed', 100, 'fred', 'csv')",
+        (acct_id, cat_id),
+    )
+    conn.execute(
+        "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, category_id, status, confidence, who, source_type) "
+        "VALUES ('fee-2', '2025-10-18', 95.00, 'CAPITAL ONE MEMBER FEE', 'CAPITAL ONE MEMBER FEE', ?, ?, 'confirmed', 100, 'fred', 'csv')",
+        (acct_id, cat_id),
+    )
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(cli, ["--db", str(db_path), "fees"])
+    assert result.exit_code == 0
+    assert "annual fee" in result.output.lower()
+    assert "capital one" in result.output.lower()
+    assert "95.00" in result.output
+
+
+def test_fees_empty(tmp_path):
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+    result = runner.invoke(cli, ["--db", str(db_path), "fees"])
+    assert result.exit_code == 0
+    assert "no" in result.output.lower()
+
+
 def test_recategorize_invalid_txn(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

@@ -89,6 +89,9 @@ cashflow recategorize 2432 "Consumer Electronics"  # override category for one t
 cashflow ingest --expense-report ~/Downloads/expense-reports-2025/
 cashflow ingest --expense-report ~/Downloads/core_week.xlsx  # single file
 
+# Annual fees
+cashflow fees                                # credit card annual fees + renewal dates
+
 # Dashboard
 cashflow dashboard                    # Opens http://localhost:8080
 cashflow dashboard --port 9090        # Custom port

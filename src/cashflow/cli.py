@@ -309,6 +309,54 @@ def recategorize(ctx, txn_id, category):
 
 
 @cli.command()
+@click.pass_context
+def fees(ctx):
+    """Show credit card annual fees and projected renewal dates."""
+    conn = ctx.obj["conn"]
+    rows = conn.execute(
+        "SELECT t.merchant, t.amount, t.date, a.name as account "
+        "FROM transactions t "
+        "JOIN accounts a ON t.account_id = a.id "
+        "JOIN categories c ON t.category_id = c.id "
+        "WHERE c.name = 'Credit Card Fees' AND t.canonical_id IS NULL "
+        "ORDER BY t.date DESC"
+    ).fetchall()
+    if not rows:
+        click.secho("No annual fees found. Categorize fee transactions as 'Credit Card Fees' first.", fg="yellow")
+        return
+
+    # Deduplicate: show the most recent charge per account+merchant+amount
+    seen = {}
+    for r in rows:
+        key = (r["account"], r["merchant"], r["amount"])
+        if key not in seen:
+            seen[key] = r
+
+    click.echo(f"\n{'Card / Fee':<40} {'Amount':>10} {'Last Charged':<14} {'Next Expected':<14} {'Days':>5}")
+    click.echo("-" * 88)
+    today = date.today()
+    for (account, merchant, amount), r in sorted(seen.items(), key=lambda x: x[1]["date"]):
+        last = date.fromisoformat(r["date"])
+        next_due = date(last.year + 1, last.month, last.day)
+        days_until = (next_due - today).days
+        if days_until < 0:
+            days_str = "PAST"
+            color = "red"
+        elif days_until < 30:
+            days_str = str(days_until)
+            color = "yellow"
+        else:
+            days_str = str(days_until)
+            color = None
+        line = f"{merchant:<40} ${amount:>9,.2f} {r['date']:<14} {next_due.isoformat():<14} {days_str:>5}"
+        if color:
+            click.secho(line, fg=color)
+        else:
+            click.echo(line)
+    click.echo(f"\nTotal annual fees: ${sum(r['amount'] for r in seen.values()):,.2f}/year")
+
+
+@cli.command()
 @click.argument("txn_id", type=int)
 @click.option("--one-off", type=str, help="Label this transaction as a one-off expense.")
 @click.pass_context
