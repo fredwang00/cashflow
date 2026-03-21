@@ -373,8 +373,8 @@ def fees(ctx):
         if key not in seen:
             seen[key] = r
 
-    click.echo(f"\n{'Card / Fee':<40} {'Amount':>10} {'Last Charged':<14} {'Next Expected':<14} {'Days':>5}")
-    click.echo("-" * 88)
+    click.echo(f"\n{'Card / Fee':<35} {'Account':<22} {'Amount':>10} {'Last Charged':<14} {'Next Expected':<14} {'Days':>5}")
+    click.echo("-" * 105)
     today = date.today()
     for (account, merchant, amount), r in sorted(seen.items(), key=lambda x: x[1]["date"]):
         last = date.fromisoformat(r["date"])
@@ -389,7 +389,7 @@ def fees(ctx):
         else:
             days_str = str(days_until)
             color = None
-        line = f"{merchant:<40} ${amount:>9,.2f} {r['date']:<14} {next_due.isoformat():<14} {days_str:>5}"
+        line = f"{merchant:<35} {account:<22} ${amount:>9,.2f} {r['date']:<14} {next_due.isoformat():<14} {days_str:>5}"
         if color:
             click.secho(line, fg=color)
         else:
