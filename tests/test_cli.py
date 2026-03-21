@@ -154,6 +154,43 @@ def test_fees_empty(tmp_path):
     assert "no" in result.output.lower()
 
 
+def test_freshness(tmp_path):
+    import sqlite3
+    db_path = tmp_path / "test.db"
+    runner = CliRunner()
+
+    # Seed DB and insert transactions with different ages
+    runner.invoke(cli, ["--db", str(db_path), "status"])
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+
+    # Get two different accounts
+    accounts = conn.execute("SELECT id, name FROM accounts LIMIT 2").fetchall()
+    acct1_id, acct1_name = accounts[0]["id"], accounts[0]["name"]
+    acct2_id, acct2_name = accounts[1]["id"], accounts[1]["name"]
+
+    # Recent transaction on account 1
+    conn.execute(
+        "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, status, confidence, who, source_type) "
+        "VALUES ('fresh-1', '2026-03-15', 50.00, 'TEST', 'Test', ?, 'confirmed', 100, 'fred', 'csv')",
+        (acct1_id,),
+    )
+    # Old transaction on account 2
+    conn.execute(
+        "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, status, confidence, who, source_type) "
+        "VALUES ('stale-1', '2025-11-01', 50.00, 'TEST', 'Test', ?, 'confirmed', 100, 'fred', 'csv')",
+        (acct2_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    result = runner.invoke(cli, ["--db", str(db_path), "freshness"])
+    assert result.exit_code == 0
+    assert acct1_name.lower() in result.output.lower()
+    assert acct2_name.lower() in result.output.lower()
+
+
 def test_recategorize_invalid_txn(tmp_path):
     db_path = tmp_path / "test.db"
     runner = CliRunner()

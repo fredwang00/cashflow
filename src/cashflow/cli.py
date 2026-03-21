@@ -310,6 +310,47 @@ def recategorize(ctx, txn_id, category):
 
 @cli.command()
 @click.pass_context
+def freshness(ctx):
+    """Show how stale each account's data is."""
+    conn = ctx.obj["conn"]
+    rows = conn.execute(
+        "SELECT a.name, MAX(t.date) as last_date, COUNT(t.id) as txn_count "
+        "FROM accounts a "
+        "LEFT JOIN transactions t ON t.account_id = a.id AND t.canonical_id IS NULL "
+        "WHERE a.is_active = 1 "
+        "GROUP BY a.id, a.name "
+        "ORDER BY last_date"
+    ).fetchall()
+    if not rows:
+        click.echo("No accounts found.")
+        return
+
+    click.echo(f"\n{'Account':<35} {'Last Transaction':<18} {'Age':>8} {'Txns':>6}")
+    click.echo("-" * 72)
+    today = date.today()
+    for r in rows:
+        last = r["last_date"]
+        count = r["txn_count"]
+        if not last:
+            age_str = "never"
+            color = "red"
+        else:
+            days = (today - date.fromisoformat(last)).days
+            if days > 60:
+                age_str = f"{days}d"
+                color = "red"
+            elif days > 30:
+                age_str = f"{days}d"
+                color = "yellow"
+            else:
+                age_str = f"{days}d"
+                color = "green"
+        line = f"{r['name']:<35} {last or '—':<18} {age_str:>8} {count:>6}"
+        click.secho(line, fg=color)
+
+
+@cli.command()
+@click.pass_context
 def fees(ctx):
     """Show credit card annual fees and projected renewal dates."""
     conn = ctx.obj["conn"]

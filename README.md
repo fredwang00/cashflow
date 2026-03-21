@@ -89,7 +89,8 @@ cashflow recategorize 2432 "Consumer Electronics"  # override category for one t
 cashflow ingest --expense-report ~/Downloads/expense-reports-2025/
 cashflow ingest --expense-report ~/Downloads/core_week.xlsx  # single file
 
-# Annual fees
+# Account freshness & annual fees
+cashflow freshness                           # how stale is each account's data?
 cashflow fees                                # credit card annual fees + renewal dates
 
 # Dashboard
