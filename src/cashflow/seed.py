@@ -26,6 +26,7 @@ ACCOUNTS = [
     ("Citi Costco", "credit", "Citi"),
     ("Apple Card", "credit", "Apple"),
     ("Checking", "debit", "Chase"),
+    ("PayPal", "cash", "PayPal"),
 ]
 GOALS = [
     ("Monthly Ceiling", "ceiling", 12000.0, "monthly", None),

@@ -54,6 +54,7 @@ cashflow dashboard
 | Citi/Costco | Screen scrape | Per-person tracking |
 | Capital One (Venture + Wendy) | CSV export | Card number → who attribution (fred/wife) |
 | Amazon orders | Screen scrape | Item-level reconciliation with Chase |
+| PayPal | CSV | Debit transactions only (filters out card funding rows) |
 | Expense reports | .xlsx | Matches to existing transactions by date + amount |
 
 Drop files in `~/cashflow/inbox/` or pass them directly to `cashflow ingest --files`.

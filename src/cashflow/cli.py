@@ -12,6 +12,7 @@ from cashflow.parsers.bofa_checking import parse_bofa_checking_csv
 from cashflow.parsers.capital_one_csv import parse_capital_one_csv
 from cashflow.parsers.citi import parse_citi
 from cashflow.parsers.apple_card import parse_apple_card_csv
+from cashflow.parsers.paypal import parse_paypal_csv
 from cashflow.parsers.expense_report import parse_expense_report
 from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
@@ -118,6 +119,8 @@ def ingest(ctx, files, email, auto, expense_report):
             txns = parse_citi(csv_file)
         elif "apple" in csv_file.name.lower():
             txns = parse_apple_card_csv(csv_file)
+        elif "paypal" in csv_file.name.lower():
+            txns = parse_paypal_csv(csv_file)
         elif "transaction" in csv_file.name.lower():
             txns = parse_target_csv(csv_file)
         else:
