@@ -16,6 +16,7 @@ from cashflow.parsers.paypal import parse_paypal_csv
 from cashflow.parsers.expense_report import parse_expense_report
 from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
+from cashflow.dedup_paypal import link_paypal_to_cards
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 
@@ -146,6 +147,11 @@ def ingest(ctx, files, email, auto, expense_report):
     matched = reconcile_amazon(conn)
     if matched > 0:
         click.echo(f"  Reconciled: {matched} Amazon items linked to transactions")
+
+    # Link PayPal duplicates to card charges
+    paypal_linked = link_paypal_to_cards(conn)
+    if paypal_linked > 0:
+        click.echo(f"  PayPal: {paypal_linked} transactions linked to card charges")
 
 @cli.command()
 @click.pass_context
