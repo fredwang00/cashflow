@@ -3,6 +3,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
+from cashflow.errors import ParseError
 from cashflow.models import ParsedTransaction
 
 
@@ -10,14 +11,19 @@ def parse_paypal_csv(path: Path) -> list[ParsedTransaction]:
     txns = []
     with open(path, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        for row in reader:
+        for row_num, row in enumerate(reader, start=2):
             if row.get("Balance Impact") != "Debit":
                 continue
             if row.get("Status") not in ("Completed", "Pending"):
                 continue
 
-            dt = datetime.strptime(row["Date"], "%m/%d/%Y").date()
-            gross = float(row["Gross"].replace(",", ""))
+            try:
+                dt = datetime.strptime(row["Date"], "%m/%d/%Y").date()
+                gross = float(row["Gross"].replace(",", ""))
+            except KeyError as e:
+                raise ParseError(path.name, row_num, f"missing column {e}") from None
+            except ValueError as e:
+                raise ParseError(path.name, row_num, str(e)) from None
             amount = abs(gross)
             name = row.get("Name", "").strip()
             merchant = name if name else "PayPal"

@@ -3,6 +3,7 @@ import hashlib
 import re
 from datetime import datetime
 from pathlib import Path
+from cashflow.errors import ParseError
 from cashflow.models import ParsedTransaction
 
 MERCHANT_PATTERNS = [
@@ -39,13 +40,18 @@ def parse_bofa_cc_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            amount = float(row["Amount"])
-            payee = row["Payee"].strip().strip('"')
-            if "PAYMENT" in payee.upper() and amount > 0:
-                continue
-            amount = -amount
-            txn_date = datetime.strptime(row["Posted Date"], "%m/%d/%Y").date()
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                amount = float(row["Amount"])
+                payee = row["Payee"].strip().strip('"')
+                if "PAYMENT" in payee.upper() and amount > 0:
+                    continue
+                amount = -amount
+                txn_date = datetime.strptime(row["Posted Date"], "%m/%d/%Y").date()
+            except KeyError as e:
+                raise ParseError(path.name, row_num, f"missing column {e}") from None
+            except ValueError as e:
+                raise ParseError(path.name, row_num, str(e)) from None
             transactions.append(ParsedTransaction(
                 date=txn_date, amount=amount, description=payee,
                 merchant=_normalize_merchant(payee),

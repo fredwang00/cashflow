@@ -3,6 +3,7 @@ import hashlib
 from datetime import date
 from pathlib import Path
 
+from cashflow.errors import ParseError
 from cashflow.models import ParsedTransaction
 
 
@@ -29,17 +30,22 @@ def parse_target_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        for raw_row in reader:
+        for row_num, raw_row in enumerate(reader, start=2):
             row = _clean_row(raw_row)
-            amount = float(row["Amount"])
-            txn_type = row["Transaction Type"].strip()
+            try:
+                amount = float(row["Amount"])
+                txn_type = row["Transaction Type"].strip()
 
-            # Skip payments
-            if txn_type == "Payment":
-                continue
+                # Skip payments
+                if txn_type == "Payment":
+                    continue
 
-            txn_date = date.fromisoformat(row["Transaction Date"])
-            description = row["Description"].strip()
+                txn_date = date.fromisoformat(row["Transaction Date"])
+                description = row["Description"].strip()
+            except KeyError as e:
+                raise ParseError(path.name, row_num, f"missing column {e}") from None
+            except ValueError as e:
+                raise ParseError(path.name, row_num, str(e)) from None
 
             transactions.append(
                 ParsedTransaction(

@@ -3,6 +3,7 @@ import hashlib
 import re
 from datetime import datetime
 from pathlib import Path
+from cashflow.errors import ParseError
 from cashflow.models import ParsedTransaction
 
 ORDER_NUMBER_RE = re.compile(r"Order Number\s+(\d{3}-\d{7}-\d{7})")
@@ -41,13 +42,18 @@ def parse_chase_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            amount = float(row["Amount"])
-            if amount > 0:
-                continue
-            amount = -amount
-            txn_date = datetime.strptime(row["Transaction Date"], "%m/%d/%Y").date()
-            description = row["Description"]
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                amount = float(row["Amount"])
+                if amount > 0:
+                    continue
+                amount = -amount
+                txn_date = datetime.strptime(row["Transaction Date"], "%m/%d/%Y").date()
+                description = row["Description"]
+            except KeyError as e:
+                raise ParseError(path.name, row_num, f"missing column {e}") from None
+            except ValueError as e:
+                raise ParseError(path.name, row_num, str(e)) from None
             transactions.append(ParsedTransaction(
                 date=txn_date, amount=amount, description=description,
                 merchant=_normalize_merchant(description),

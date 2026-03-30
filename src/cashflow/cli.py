@@ -1,8 +1,10 @@
 import re
+import sqlite3
 import click
 from datetime import date
 from pathlib import Path
 from cashflow.db import get_connection, store_transactions, store_income
+from cashflow.errors import ParseError
 from cashflow.seed import seed_all
 from cashflow.parsers.chase import parse_chase_csv
 from cashflow.parsers.amazon import parse_amazon_orders
@@ -20,16 +22,70 @@ from cashflow.dedup_paypal import link_paypal_to_cards
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 
-@click.group()
+def _format_error(e):
+    """Format an exception into user-friendly error lines.
+
+    Returns (lines, exit_code) where lines are (message, color) tuples.
+    """
+    if isinstance(e, ParseError):
+        lines = [(f"Bad data in {e.file}", "red")]
+        if e.row is not None:
+            lines.append((f"  Row {e.row}: {e.message}", "red"))
+        else:
+            lines.append((f"  {e.message}", "red"))
+        return lines, 1
+    if isinstance(e, FileNotFoundError):
+        return [(f"File not found: {e.filename}", "red")], 1
+    if isinstance(e, PermissionError):
+        return [(f"Permission denied: {e.filename}", "red")], 1
+    if isinstance(e, sqlite3.DatabaseError):
+        return [
+            (f"Database error: {e}", "red"),
+            ("  Is the database file corrupt? Try: cashflow --db /path/to/new.db status", "yellow"),
+        ], 1
+    return [(f"Error: {e}", "red")], 1
+
+
+class CashflowGroup(click.Group):
+    """Click group that catches exceptions and shows clean errors."""
+
+    def invoke(self, ctx):
+        try:
+            return super().invoke(ctx)
+        except click.exceptions.Exit:
+            raise
+        except click.exceptions.Abort:
+            raise
+        except click.ClickException:
+            raise
+        except Exception as e:
+            debug = ctx.params.get("debug", False)
+            if debug:
+                raise
+            lines, code = _format_error(e)
+            for msg, color in lines:
+                click.secho(msg, fg=color)
+            if not isinstance(e, (ParseError, FileNotFoundError, PermissionError, sqlite3.DatabaseError)):
+                click.secho("Run with --debug for full traceback.", fg="yellow")
+            ctx.exit(code)
+
+
+@click.group(cls=CashflowGroup)
 @click.option("--db", type=click.Path(), default=None, help="Path to SQLite database (default: ~/.cashflow/cashflow.db).")
+@click.option("--debug", is_flag=True, help="Show full tracebacks on error.")
 @click.pass_context
-def cli(ctx, db):
+def cli(ctx, db, debug):
     """Household financial dashboard."""
     ctx.ensure_object(dict)
     db_path = Path(db) if db else None
     conn = get_connection(db_path) if db_path else get_connection()
     seed_all(conn)
     ctx.obj["conn"] = conn
+
+
+def main():
+    """Entry point for the cashflow CLI."""
+    cli()
 
 @cli.command()
 @click.option("--files", type=click.Path(exists=True), help="Path to CSV inbox directory or file.")

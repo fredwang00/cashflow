@@ -3,6 +3,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
+from cashflow.errors import ParseError
 from cashflow.models import ParsedTransaction
 
 CARDHOLDER_MAP = {
@@ -30,19 +31,24 @@ def parse_apple_card_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            txn_type = row["Type"].strip()
-            description = row["Description"].strip().strip('"')
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                txn_type = row["Type"].strip()
+                description = row["Description"].strip().strip('"')
 
-            if txn_type in SKIP_TYPES:
-                continue
-            if description.upper() in SKIP_DESCRIPTIONS:
-                continue
+                if txn_type in SKIP_TYPES:
+                    continue
+                if description.upper() in SKIP_DESCRIPTIONS:
+                    continue
 
-            amount = float(row["Amount (USD)"])
-            txn_date = datetime.strptime(row["Transaction Date"], "%m/%d/%Y").date()
-            merchant = row["Merchant"].strip().strip('"')
-            purchased_by = row["Purchased By"].strip().strip('"')
+                amount = float(row["Amount (USD)"])
+                txn_date = datetime.strptime(row["Transaction Date"], "%m/%d/%Y").date()
+                merchant = row["Merchant"].strip().strip('"')
+                purchased_by = row["Purchased By"].strip().strip('"')
+            except KeyError as e:
+                raise ParseError(path.name, row_num, f"missing column {e}") from None
+            except ValueError as e:
+                raise ParseError(path.name, row_num, str(e)) from None
             who = CARDHOLDER_MAP.get(purchased_by, "shared")
 
             transactions.append(

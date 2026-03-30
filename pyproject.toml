@@ -20,7 +20,7 @@ dev = [
 ]
 
 [project.scripts]
-cashflow = "cashflow.cli:cli"
+cashflow = "cashflow.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

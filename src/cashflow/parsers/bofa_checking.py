@@ -3,6 +3,7 @@ import hashlib
 import re
 from datetime import datetime
 from pathlib import Path
+from cashflow.errors import ParseError
 from cashflow.models import ParsedTransaction
 
 SKIP_PATTERNS = [
@@ -74,7 +75,7 @@ def parse_bofa_checking_csv(path: Path) -> tuple[list[ParsedTransaction], list[d
         else:
             return expenses, income_records
         reader = csv.DictReader(f, fieldnames=["Date", "Description", "Amount", "Running Bal."])
-        for row in reader:
+        for row_num, row in enumerate(reader, start=2):
             if not row["Date"] or not row["Amount"]:
                 continue
             description = row["Description"].strip().strip('"')
@@ -82,8 +83,11 @@ def parse_bofa_checking_csv(path: Path) -> tuple[list[ParsedTransaction], list[d
             date_str = row["Date"].strip()
             if _should_skip(description):
                 continue
-            amount = _parse_amount(amount_str)
-            txn_date = datetime.strptime(date_str, "%m/%d/%Y").date()
+            try:
+                amount = _parse_amount(amount_str)
+                txn_date = datetime.strptime(date_str, "%m/%d/%Y").date()
+            except ValueError as e:
+                raise ParseError(path.name, row_num, str(e)) from None
             source_id = _make_source_id(date_str, description, amount_str)
             income_source = _detect_income(description)
             if income_source and amount > 0:

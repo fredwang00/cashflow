@@ -3,6 +3,7 @@ import hashlib
 from datetime import date
 from pathlib import Path
 
+from cashflow.errors import ParseError
 from cashflow.models import ParsedTransaction
 
 # Card number → who attribution
@@ -33,24 +34,29 @@ def parse_capital_one_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
-        for row in reader:
-            description = row["Description"].strip()
-            debit = row["Debit"].strip()
-            credit = row["Credit"].strip()
-            card_no = row["Card No."].strip()
+        for row_num, row in enumerate(reader, start=2):
+            try:
+                description = row["Description"].strip()
+                debit = row["Debit"].strip()
+                credit = row["Credit"].strip()
+                card_no = row["Card No."].strip()
 
-            # Skip payments (credit with no debit, usually autopay description)
-            if credit and not debit:
-                if "PAYMENT" in description.upper() or "AUTOPAY" in description.upper():
+                # Skip payments (credit with no debit, usually autopay description)
+                if credit and not debit:
+                    if "PAYMENT" in description.upper() or "AUTOPAY" in description.upper():
+                        continue
+                    # Non-payment credit = refund, keep as negative
+                    amount = -float(credit)
+                elif debit:
+                    amount = float(debit)
+                else:
                     continue
-                # Non-payment credit = refund, keep as negative
-                amount = -float(credit)
-            elif debit:
-                amount = float(debit)
-            else:
-                continue
 
-            txn_date = date.fromisoformat(row["Transaction Date"])
+                txn_date = date.fromisoformat(row["Transaction Date"])
+            except KeyError as e:
+                raise ParseError(path.name, row_num, f"missing column {e}") from None
+            except ValueError as e:
+                raise ParseError(path.name, row_num, str(e)) from None
             who = CARD_WHO.get(card_no, "shared")
 
             transactions.append(
