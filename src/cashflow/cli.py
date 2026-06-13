@@ -21,6 +21,7 @@ from cashflow.parsers.expense_report import parse_expense_report
 from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.dedup_paypal import link_paypal_to_cards
+from cashflow.dedup_checking import link_checking_duplicates
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 
@@ -214,6 +215,11 @@ def ingest(ctx, files, email, auto, expense_report):
     paypal_linked = link_paypal_to_cards(conn)
     if paypal_linked > 0:
         click.echo(f"  PayPal: {paypal_linked} transactions linked to card charges")
+
+    # Link checking duplicates from overlapping exports
+    checking_linked = link_checking_duplicates(conn)
+    if checking_linked > 0:
+        click.echo(f"  Checking dedup: {checking_linked} duplicates linked")
 
 @cli.command()
 @click.pass_context

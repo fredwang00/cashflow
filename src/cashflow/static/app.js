@@ -323,7 +323,11 @@ function sortTransactions() {
     var txs = currentTransactions.slice();
     txs.sort(function(a, b) {
         var va = a[sortCol], vb = b[sortCol];
-        if (sortCol === 'amount') return sortAsc ? va - vb : vb - va;
+        if (sortCol === 'amount') {
+            va = a.amount - (a.reimbursed_amount || 0);
+            vb = b.amount - (b.reimbursed_amount || 0);
+            return sortAsc ? va - vb : vb - va;
+        }
         va = (va || '').toString().toLowerCase();
         vb = (vb || '').toString().toLowerCase();
         if (va < vb) return sortAsc ? -1 : 1;
@@ -350,8 +354,12 @@ function renderTxRows(txs) {
         tr.appendChild(tdMerch);
 
         var tdAmt = document.createElement('td');
-        tdAmt.className = 'amount' + (tx.amount < 0 ? ' negative' : '');
-        tdAmt.textContent = fmt(tx.amount);
+        var netAmount = tx.amount - (tx.reimbursed_amount || 0);
+        tdAmt.className = 'amount' + (netAmount < 0 ? ' negative' : '');
+        tdAmt.textContent = fmt(netAmount);
+        if (tx.reimbursed_amount > 0 && tx.reimbursed_amount < tx.amount) {
+            tdAmt.title = 'Original: ' + fmt(tx.amount) + ', reimbursed: ' + fmt(tx.reimbursed_amount);
+        }
         tr.appendChild(tdAmt);
 
         var tdCat = document.createElement('td');
