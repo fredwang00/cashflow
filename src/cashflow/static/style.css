@@ -5,7 +5,7 @@ body {
     background: #0f172a;
     color: #e2e8f0;
     padding: 24px;
-    max-width: 1200px;
+    max-width: 1400px;
     margin: 0 auto;
 }
 
@@ -186,9 +186,16 @@ tbody tr:hover {
 
 td {
     padding: 8px 12px;
-    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+td:first-child,
+td.amount,
+td:nth-child(5),
+td:nth-child(6),
+td:nth-child(7) {
+    white-space: nowrap;
 }
 
 td.amount {
