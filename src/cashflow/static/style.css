@@ -145,6 +145,7 @@ header h1 {
 
 table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 0.9rem;
 }
@@ -159,6 +160,13 @@ thead th {
     user-select: none;
     white-space: nowrap;
 }
+
+th[data-col="date"]     { width: 110px; }
+th[data-col="amount"]   { width: 100px; }
+th[data-col="category"] { width: 150px; }
+th[data-col="who"]      { width: 70px; }
+th:nth-child(6),
+th:nth-child(7)         { width: 60px; }
 
 thead th:hover {
     color: #e2e8f0;
@@ -179,6 +187,8 @@ tbody tr:hover {
 td {
     padding: 8px 12px;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 td.amount {

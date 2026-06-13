@@ -20,6 +20,21 @@ def test_ingest_then_status(tmp_path):
     assert result.exit_code == 0
     assert "$" in result.output
 
+
+def test_ingest_multiple_files(tmp_path):
+    db_path = tmp_path / "test.db"
+    fixtures = Path(__file__).parent / "fixtures"
+    chase = fixtures / "chase_sample.csv"
+    capital_one = fixtures / "capital_one_csv_sample.csv"
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "--db", str(db_path), "ingest",
+        "--files", str(chase),
+        "--files", str(capital_one),
+    ])
+    assert result.exit_code == 0
+    assert result.output.count("new transactions") == 2
+
 def test_tag_one_off(tmp_path):
     db_path = tmp_path / "test.db"
     fixture = Path(__file__).parent / "fixtures" / "chase_sample.csv"
@@ -200,3 +215,85 @@ def test_recategorize_invalid_txn(tmp_path):
     )
     assert result.exit_code == 0
     assert "not found" in result.output.lower()
+
+
+def test_rename_merchant(tmp_path):
+    import sqlite3
+    db_path = tmp_path / "test.db"
+    fixture = Path(__file__).parent / "fixtures" / "chase_sample.csv"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "ingest", "--files", str(fixture)])
+
+    result = runner.invoke(cli, ["--db", str(db_path), "rename", "1", "Amex Gold Annual Fee"])
+    assert result.exit_code == 0
+    assert "Amex Gold Annual Fee" in result.output
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT merchant FROM transactions WHERE id = 1").fetchone()
+    assert row["merchant"] == "Amex Gold Annual Fee"
+    conn.close()
+
+
+def test_reimburse_partial(tmp_path):
+    import sqlite3
+    db_path = tmp_path / "test.db"
+    fixture = Path(__file__).parent / "fixtures" / "chase_sample.csv"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "ingest", "--files", str(fixture)])
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    txn = conn.execute("SELECT id, amount FROM transactions LIMIT 1").fetchone()
+    txn_id = txn["id"]
+    txn_amount = txn["amount"]
+    conn.close()
+
+    reimburse_amount = round(txn_amount * 0.7, 2)
+    result = runner.invoke(cli, ["--db", str(db_path), "reimburse", str(txn_id), str(reimburse_amount)])
+    assert result.exit_code == 0
+    assert "reimbursed" in result.output.lower()
+    assert "net" in result.output.lower()
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT reimbursed_amount, is_reimbursed FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    assert abs(row["reimbursed_amount"] - reimburse_amount) < 0.01
+    assert row["is_reimbursed"] == 0
+    conn.close()
+
+
+def test_reimburse_full(tmp_path):
+    import sqlite3
+    db_path = tmp_path / "test.db"
+    fixture = Path(__file__).parent / "fixtures" / "chase_sample.csv"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "ingest", "--files", str(fixture)])
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    txn = conn.execute("SELECT id, amount FROM transactions LIMIT 1").fetchone()
+    txn_id = txn["id"]
+    txn_amount = txn["amount"]
+    conn.close()
+
+    result = runner.invoke(cli, ["--db", str(db_path), "reimburse", str(txn_id), str(txn_amount)])
+    assert result.exit_code == 0
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT reimbursed_amount, is_reimbursed FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    assert abs(row["reimbursed_amount"] - txn_amount) < 0.01
+    assert row["is_reimbursed"] == 1
+    conn.close()
+
+
+def test_reimburse_exceeds_amount(tmp_path):
+    db_path = tmp_path / "test.db"
+    fixture = Path(__file__).parent / "fixtures" / "chase_sample.csv"
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", str(db_path), "ingest", "--files", str(fixture)])
+
+    result = runner.invoke(cli, ["--db", str(db_path), "reimburse", "1", "999999"])
+    assert result.exit_code == 0
+    assert "exceeds" in result.output.lower()

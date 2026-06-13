@@ -1,0 +1,10 @@
+Date,Time,Cardholder,Amount,Points,Balance,Status,Type,Merchant,Description
+2026-06-11,"12:19 PM","Wendy Rizzo",25.00,75,,Pending,Purchase,Starbucks,
+2026-06-10,"9:49 AM","Fei Wang",31.94,96,,Pending,Purchase,Uber,
+2026-06-09,"10:50 AM","Wendy Rizzo",14.74,44,947.84,Posted,Purchase,McDonald's,"MCDONALD'S F7695 VIRGINIA BEACVA"
+2026-06-05,"5:58 AM","Fei Wang",-704.83,0,308.97,Posted,Payment,Payment,"PAYMENT - THANK YOU"
+2026-06-04,"11:11 AM","Fei Wang",33.17,100,1004.48,Posted,Purchase,"Indian Garden","INDIAN GARDEN SOLNA SE"
+2026-04-28,"3:00 PM","Fei Wang",50.00,0,766.19,Posted,Fee,"Gold Annual Subscription","GOLD ANNUAL SUBSCRIPTIO"
+2026-05-22,"3:00 PM","Fei Wang",-40.12,0,148.55,Posted,Other,"Points Redeemed","POINTS REDEEMED"
+2026-04-18,"7:58 PM","Fei Wang",88.42,0,,Declined,Purchase,"Noodle Man",
+2026-04-18,"7:58 PM","Fei Wang",88.42,0,,Declined,Purchase,"Noodle Man",

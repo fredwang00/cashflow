@@ -25,6 +25,8 @@ ACCOUNTS = [
     ("Target Card", "credit", "Target"),
     ("Citi Costco", "credit", "Citi"),
     ("Apple Card", "credit", "Apple"),
+    ("Amex Gold", "credit", "Amex"),
+    ("Robinhood Gold", "credit", "Robinhood"),
     ("Checking", "debit", "Chase"),
     ("PayPal", "cash", "PayPal"),
 ]

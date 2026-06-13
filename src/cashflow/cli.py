@@ -15,6 +15,8 @@ from cashflow.parsers.capital_one_csv import parse_capital_one_csv
 from cashflow.parsers.citi import parse_citi
 from cashflow.parsers.apple_card import parse_apple_card_csv
 from cashflow.parsers.paypal import parse_paypal_csv
+from cashflow.parsers.amex import parse_amex_csv
+from cashflow.parsers.robinhood import parse_robinhood_csv
 from cashflow.parsers.expense_report import parse_expense_report
 from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
@@ -88,7 +90,7 @@ def main():
     cli()
 
 @cli.command()
-@click.option("--files", type=click.Path(exists=True), help="Path to CSV inbox directory or file.")
+@click.option("--files", type=click.Path(exists=True), multiple=True, help="Path to CSV file or inbox directory. Can be repeated.")
 @click.option("--email", is_flag=True, help="Poll Gmail for new emails. (Not yet implemented.)")
 @click.option("--auto", is_flag=True, help="Run both email and file ingestion.")
 @click.option("--expense-report", type=click.Path(exists=True), help="Path to expense report .xlsx file or directory.")
@@ -133,14 +135,14 @@ def ingest(ctx, files, email, auto, expense_report):
     if not files and not auto:
         click.echo("No source specified. Use --files PATH or --email.")
         return
-    path = Path(files) if files else None
-    if path is None:
-        return
     total = 0
-    if path.is_file():
-        csv_files = [path]
-    else:
-        csv_files = sorted(path.glob("*.csv")) + sorted(path.glob("*.CSV")) + sorted(path.glob("*.txt"))
+    csv_files = []
+    for f in files:
+        path = Path(f)
+        if path.is_file():
+            csv_files.append(path)
+        else:
+            csv_files += sorted(path.glob("*.csv")) + sorted(path.glob("*.CSV")) + sorted(path.glob("*.txt"))
     for csv_file in csv_files:
         click.echo(f"Parsing {csv_file.name}...")
         if "chase" in csv_file.name.lower():
@@ -176,6 +178,10 @@ def ingest(ctx, files, email, auto, expense_report):
             txns = parse_citi(csv_file)
         elif "apple" in csv_file.name.lower():
             txns = parse_apple_card_csv(csv_file)
+        elif "amex" in csv_file.name.lower():
+            txns = parse_amex_csv(csv_file)
+        elif "robinhood" in csv_file.name.lower():
+            txns = parse_robinhood_csv(csv_file)
         elif "paypal" in csv_file.name.lower():
             txns = parse_paypal_csv(csv_file)
         elif "transaction" in csv_file.name.lower():
@@ -460,6 +466,56 @@ def fees(ctx):
         else:
             click.echo(line)
     click.echo(f"\nTotal annual fees: ${sum(r['amount'] for r in seen.values()):,.2f}/year")
+
+
+@cli.command()
+@click.argument("txn_id", type=int)
+@click.argument("amount", type=float)
+@click.pass_context
+def reimburse(ctx, txn_id, amount):
+    """Record a partial or full reimbursement on a transaction."""
+    conn = ctx.obj["conn"]
+    txn = conn.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    if not txn:
+        click.secho(f"Transaction {txn_id} not found.", fg="red")
+        return
+    if amount > txn["amount"]:
+        click.secho(f"Reimbursement ${amount:,.2f} exceeds transaction amount ${txn['amount']:,.2f}.", fg="red")
+        return
+    if amount <= 0:
+        click.secho("Reimbursement amount must be positive.", fg="red")
+        return
+    is_full = abs(amount - txn["amount"]) < 0.005
+    conn.execute(
+        "UPDATE transactions SET reimbursed_amount = ?, is_reimbursed = ? WHERE id = ?",
+        (amount, 1 if is_full else 0, txn_id),
+    )
+    conn.commit()
+    net = txn["amount"] - amount
+    click.secho(
+        f"#{txn_id} {txn['merchant']} on {txn['date']}: "
+        f"${txn['amount']:,.2f} - ${amount:,.2f} reimbursed = ${net:,.2f} net",
+        fg="green",
+    )
+
+
+@cli.command()
+@click.argument("txn_id", type=int)
+@click.argument("merchant", type=str)
+@click.pass_context
+def rename(ctx, txn_id, merchant):
+    """Rename the merchant on a transaction."""
+    conn = ctx.obj["conn"]
+    txn = conn.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+    if not txn:
+        click.secho(f"Transaction {txn_id} not found.", fg="red")
+        return
+    conn.execute("UPDATE transactions SET merchant = ? WHERE id = ?", (merchant, txn_id))
+    conn.commit()
+    click.secho(
+        f"#{txn_id} renamed: \"{txn['merchant']}\" → \"{merchant}\"",
+        fg="green",
+    )
 
 
 @cli.command()

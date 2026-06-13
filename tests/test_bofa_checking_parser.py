@@ -31,6 +31,13 @@ def test_parse_skips_inter_account_transfers():
 def test_parse_skips_credit_card_payments():
     expenses, _ = parse_bofa_checking_csv(FIXTURE)
     assert not any("CREDIT CRD" in t.description or "AUTOPAY" in t.description for t in expenses)
+    assert not any("Robinhood Card" in t.description for t in expenses)
+    assert not any("Online Scheduled Payment" in t.description for t in expenses)
+
+
+def test_parse_skips_robinhood_brokerage_transfers():
+    expenses, _ = parse_bofa_checking_csv(FIXTURE)
+    assert not any("ROBINHOOD" in t.description and "DEBITS" in t.description for t in expenses)
 
 def test_parse_skips_brokerage_transfers():
     expenses, income = parse_bofa_checking_csv(FIXTURE)

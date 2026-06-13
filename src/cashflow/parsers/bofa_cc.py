@@ -44,7 +44,8 @@ def parse_bofa_cc_csv(path: Path) -> list[ParsedTransaction]:
             try:
                 amount = float(row["Amount"])
                 payee = row["Payee"].strip().strip('"')
-                if "PAYMENT" in payee.upper() and amount > 0:
+                payee_upper = payee.upper()
+                if amount > 0 and ("PAYMENT" in payee_upper or "RECURRING FROM CHK" in payee_upper):
                     continue
                 amount = -amount
                 txn_date = datetime.strptime(row["Posted Date"], "%m/%d/%Y").date()
