@@ -18,6 +18,7 @@ SKIP_PATTERNS = [
     re.compile(r"ROBINHOOD\b.*DES:DEBITS", re.IGNORECASE),
     re.compile(r"Robinhood Securities", re.IGNORECASE),
     re.compile(r"Online Scheduled Payment to ACCT", re.IGNORECASE),
+    re.compile(r"WF Credit Card\b", re.IGNORECASE),
     re.compile(r"CITI AUTOPAY", re.IGNORECASE),
     re.compile(r"TARGET CARD.*PAYMENT", re.IGNORECASE),
     re.compile(r"SANTBK.*WEBXFR", re.IGNORECASE),

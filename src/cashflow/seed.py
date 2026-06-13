@@ -27,6 +27,7 @@ ACCOUNTS = [
     ("Apple Card", "credit", "Apple"),
     ("Amex Gold", "credit", "Amex"),
     ("Robinhood Gold", "credit", "Robinhood"),
+    ("Wells Fargo", "credit", "Wells Fargo"),
     ("Checking", "debit", "Chase"),
     ("PayPal", "cash", "PayPal"),
 ]

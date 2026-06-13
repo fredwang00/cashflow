@@ -17,6 +17,7 @@ from cashflow.parsers.apple_card import parse_apple_card_csv
 from cashflow.parsers.paypal import parse_paypal_csv
 from cashflow.parsers.amex import parse_amex_csv
 from cashflow.parsers.robinhood import parse_robinhood_csv
+from cashflow.parsers.wells_fargo import parse_wells_fargo_csv
 from cashflow.parsers.expense_report import parse_expense_report
 from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
@@ -183,6 +184,8 @@ def ingest(ctx, files, email, auto, expense_report):
             txns = parse_amex_csv(csv_file)
         elif "robinhood" in csv_file.name.lower():
             txns = parse_robinhood_csv(csv_file)
+        elif "wells" in csv_file.name.lower():
+            txns = parse_wells_fargo_csv(csv_file)
         elif "paypal" in csv_file.name.lower():
             txns = parse_paypal_csv(csv_file)
         elif "transaction" in csv_file.name.lower():
