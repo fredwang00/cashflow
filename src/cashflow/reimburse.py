@@ -49,7 +49,7 @@ def match_expense_report(
             already += 1
         elif txn:
             conn.execute(
-                "UPDATE transactions SET is_reimbursed = 1 WHERE id = ?",
+                "UPDATE transactions SET is_reimbursed = 1, reimbursed_amount = amount WHERE id = ?",
                 (txn["id"],),
             )
             matched += 1

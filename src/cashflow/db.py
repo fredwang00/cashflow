@@ -17,6 +17,10 @@ def _migrate(conn: sqlite3.Connection) -> None:
     if "is_reimbursed" not in cols:
         conn.execute("ALTER TABLE transactions ADD COLUMN is_reimbursed BOOLEAN NOT NULL DEFAULT 0")
         conn.commit()
+    if "reimbursed_amount" not in cols:
+        conn.execute("ALTER TABLE transactions ADD COLUMN reimbursed_amount REAL NOT NULL DEFAULT 0")
+        conn.execute("UPDATE transactions SET reimbursed_amount = amount WHERE is_reimbursed = 1")
+        conn.commit()
 
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
@@ -48,6 +52,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     is_one_off BOOLEAN NOT NULL DEFAULT 0,
     one_off_label TEXT,
     is_reimbursed BOOLEAN NOT NULL DEFAULT 0,
+    reimbursed_amount REAL NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed')),
     confidence INTEGER NOT NULL DEFAULT 0,
     who TEXT NOT NULL DEFAULT 'shared' CHECK (who IN ('fred', 'wife', 'shared')),

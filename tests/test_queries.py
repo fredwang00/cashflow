@@ -55,3 +55,28 @@ def test_get_goal(db):
     ceiling = get_goal(db, "ceiling")
     assert ceiling is not None
     assert ceiling["amount"] == 12000.0
+
+
+def test_get_month_spending_subtracts_reimbursed_amount(db):
+    seed_all(db)
+    _insert_txn(db, 1627.80, "2026-03-12")
+    _insert_txn(db, 500.0, "2026-03-15")
+    db.execute(
+        "UPDATE transactions SET reimbursed_amount = 1127.80 WHERE amount = 1627.80"
+    )
+    db.commit()
+    total = get_month_spending(db, 2026, 3)
+    assert abs(total - 1000.0) < 0.01
+
+
+def test_get_ytd_surplus_accounts_for_reimbursement(db):
+    seed_all(db)
+    _insert_income(db, 15000.0, "2026-01-15")
+    _insert_txn(db, 10000.0, "2026-01-15")
+    _insert_txn(db, 1600.0, "2026-01-20")
+    db.execute(
+        "UPDATE transactions SET reimbursed_amount = 1100.0 WHERE amount = 1600.0"
+    )
+    db.commit()
+    surplus = get_ytd_surplus(db, 2026)
+    assert abs(surplus - 4500.0) < 0.01

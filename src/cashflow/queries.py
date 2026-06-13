@@ -3,7 +3,7 @@ from typing import Optional
 
 def get_month_spending(conn: sqlite3.Connection, year: int, month: int) -> float:
     row = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0.0) as total FROM transactions "
+        "SELECT COALESCE(SUM(amount - reimbursed_amount), 0.0) as total FROM transactions "
         "WHERE canonical_id IS NULL AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
         (str(year), f"{month:02d}"),
     ).fetchone()
@@ -11,7 +11,7 @@ def get_month_spending(conn: sqlite3.Connection, year: int, month: int) -> float
 
 def get_ytd_spending(conn: sqlite3.Connection, year: int) -> float:
     row = conn.execute(
-        "SELECT COALESCE(SUM(amount), 0.0) as total FROM transactions "
+        "SELECT COALESCE(SUM(amount - reimbursed_amount), 0.0) as total FROM transactions "
         "WHERE canonical_id IS NULL AND strftime('%Y', date) = ?",
         (str(year),),
     ).fetchone()
