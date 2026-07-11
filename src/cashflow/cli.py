@@ -528,12 +528,70 @@ def rename(ctx, txn_id, merchant):
 
 
 @cli.command()
-@click.argument("txn_id", type=int)
+@click.argument("txn_id", type=int, required=False, default=None)
 @click.option("--one-off", type=str, help="Label this transaction as a one-off expense.")
+@click.option("--search", type=str, help="Batch tag transactions matching this merchant/description pattern.")
+@click.option("--date-from", type=str, help="Filter by start date (YYYY-MM-DD).")
+@click.option("--date-to", type=str, help="Filter by end date (YYYY-MM-DD).")
 @click.pass_context
-def tag(ctx, txn_id, one_off):
-    """Tag a transaction (e.g., as a one-off expense)."""
+def tag(ctx, txn_id, one_off, search, date_from, date_to):
+    """Tag a transaction (e.g., as a one-off expense).
+
+    Single: cashflow tag 123 --one-off "japan 2026"
+    Batch:  cashflow tag --search "JP" --one-off "japan 2026"
+    """
     conn = ctx.obj["conn"]
+
+    if search:
+        if not one_off:
+            click.secho("--one-off is required for batch tagging.", fg="red")
+            return
+
+        sql = (
+            "SELECT t.id, t.date, t.amount, t.merchant, t.description, a.name as account "
+            "FROM transactions t JOIN accounts a ON t.account_id = a.id "
+            "WHERE t.canonical_id IS NULL AND t.is_one_off = 0 "
+            "AND (LOWER(t.merchant) LIKE ? OR LOWER(t.description) LIKE ?)"
+        )
+        params = [f"%{search.lower()}%", f"%{search.lower()}%"]
+
+        if date_from:
+            sql += " AND t.date >= ?"
+            params.append(date_from)
+        if date_to:
+            sql += " AND t.date <= ?"
+            params.append(date_to)
+
+        sql += " ORDER BY t.date"
+        rows = conn.execute(sql, params).fetchall()
+
+        if not rows:
+            click.secho(f"No untagged transactions matching '{search}'.", fg="yellow")
+            return
+
+        click.echo(f"\nFound {len(rows)} transactions to tag as \"{one_off}\":\n")
+        total = 0
+        for r in rows:
+            click.echo(f"  {r['date']}  ${r['amount']:>9,.2f}  {r['account']:<16} {r['merchant'][:40]}")
+            total += r["amount"]
+        click.echo(f"\n  Total: ${total:,.2f}")
+
+        if not click.confirm(f"\nTag all {len(rows)} as one-off \"{one_off}\"?"):
+            return
+
+        ids = [r["id"] for r in rows]
+        conn.execute(
+            f"UPDATE transactions SET is_one_off = 1, one_off_label = ? "
+            f"WHERE id IN ({','.join('?' * len(ids))})",
+            [one_off] + ids,
+        )
+        conn.commit()
+        click.secho(f"Tagged {len(ids)} transactions.", fg="green")
+        return
+
+    if txn_id is None:
+        click.secho("Provide a transaction ID or use --search for batch tagging.", fg="red")
+        return
 
     txn = conn.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
     if not txn:
