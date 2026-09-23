@@ -30,7 +30,7 @@ def parse_citi(path: Path) -> list[ParsedTransaction]:
     Skips autopay payments. Stops at 'End of Activity'.
     Detects who (fred/wife) from cardholder name.
     """
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
     transactions = []
     i = 0
 
@@ -73,11 +73,7 @@ def parse_citi(path: Path) -> list[ParsedTransaction]:
         i += 1
 
         # Skip payments
-        if "AUTOPAY" in description.upper():
-            continue
-
-        # Negative amounts are payments/credits — skip
-        if amount < 0:
+        if "AUTOPAY" in description.upper() or "PAYMENT THANK YOU" in description.upper():
             continue
 
         transactions.append(

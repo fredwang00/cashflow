@@ -47,7 +47,8 @@ def reconcile_amazon(conn: sqlite3.Connection) -> int:
     """Match unlinked amazon_items to transactions via order number.
 
     Scans transaction descriptions for order numbers and links matching
-    amazon_items by setting their transaction_id.
+    amazon_items by setting their transaction_id. Only a unique positive charge
+    is eligible: split shipments stay unlinked because item allocation is unknown.
 
     Returns count of newly matched items.
     """
@@ -63,30 +64,28 @@ def reconcile_amazon(conn: sqlite3.Connection) -> int:
         order_items.setdefault(item["order_number"], []).append(item["id"])
 
     transactions = conn.execute(
-        "SELECT id, description FROM transactions WHERE canonical_id IS NULL"
+        "SELECT id, description FROM transactions WHERE canonical_id IS NULL AND amount > 0"
     ).fetchall()
 
-    matched = 0
+    order_transactions: dict[str, list[int]] = {}
     for txn in transactions:
         match = ORDER_NUMBER_RE.search(txn["description"])
         if not match:
             match = DIGITAL_ORDER_RE.search(txn["description"])
-        if not match:
-            continue
+        if match:
+            order_transactions.setdefault(match.group(1), []).append(txn["id"])
 
-        order_num = match.group(1)
-        item_ids = order_items.get(order_num)
-        if not item_ids:
+    matched = 0
+    for order_num, item_ids in order_items.items():
+        transaction_ids = order_transactions.get(order_num, [])
+        if len(transaction_ids) != 1:
             continue
-
         for item_id in item_ids:
             conn.execute(
                 "UPDATE amazon_items SET transaction_id = ? WHERE id = ?",
-                (txn["id"], item_id),
+                (transaction_ids[0], item_id),
             )
             matched += 1
-
-        del order_items[order_num]
 
     conn.commit()
     return matched

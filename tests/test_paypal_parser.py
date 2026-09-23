@@ -103,3 +103,39 @@ def test_link_paypal_skips_balance_funded(tmp_path):
         "SELECT canonical_id FROM transactions WHERE source_id = 'paypal-1'"
     ).fetchone()
     assert row["canonical_id"] is None
+
+
+def _payment(source_id, account="PayPal", day=15):
+    return ParsedTransaction(
+        date=date(2025, 1, day), amount=25.0, description="PAYPAL *STORE",
+        merchant="PAYPAL *STORE", source_id=source_id, source_type="csv",
+        account_name=account,
+    )
+
+
+def test_paypal_competing_payments_remain_unlinked(tmp_path):
+    conn = _make_db(tmp_path)
+    store_transactions(conn, [_payment("p1"), _payment("p2"), _payment("c1", "Chase Prime Visa")])
+    assert link_paypal_to_cards(conn) == 0
+    assert conn.execute("SELECT COUNT(*) FROM transactions WHERE canonical_id IS NOT NULL").fetchone()[0] == 0
+
+
+def test_paypal_ambiguous_cards_remain_unlinked(tmp_path):
+    conn = _make_db(tmp_path)
+    store_transactions(conn, [_payment("p1"), _payment("c1", "Chase Prime Visa"), _payment("c2", "Chase Freedom", 16)])
+    assert link_paypal_to_cards(conn) == 0
+
+
+def test_paypal_does_not_reuse_previously_linked_card(tmp_path):
+    conn = _make_db(tmp_path)
+    store_transactions(conn, [_payment("p1"), _payment("c1", "Chase Prime Visa")])
+    assert link_paypal_to_cards(conn) == 1
+    store_transactions(conn, [_payment("p2")])
+    assert link_paypal_to_cards(conn) == 0
+    assert conn.execute("SELECT canonical_id FROM transactions WHERE source_id = 'p2'").fetchone()[0] is None
+
+
+def test_paypal_does_not_link_bank_withdrawals_as_card_purchases(tmp_path):
+    conn = _make_db(tmp_path)
+    store_transactions(conn, [_payment("p1"), _payment("bank", "Checking")])
+    assert link_paypal_to_cards(conn) == 0

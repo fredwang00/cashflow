@@ -1,3 +1,4 @@
+import math
 import sqlite3
 from pathlib import Path
 
@@ -116,44 +117,44 @@ CREATE TABLE IF NOT EXISTS ingest_state (
 from cashflow.models import ParsedTransaction
 
 def store_transactions(conn, txns: list[ParsedTransaction]) -> int:
-    accounts = {row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM accounts").fetchall()}
-    unknown_accounts: set[str] = set()
-    inserted = 0
-    for txn in txns:
-        account_id = accounts.get(txn.account_name)
-        if account_id is None:
-            unknown_accounts.add(txn.account_name)
-            continue
-        try:
-            conn.execute(
-                "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, status, confidence, who, source_type) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)",
-                (txn.source_id, txn.date.isoformat(), txn.amount, txn.description, txn.merchant, account_id, txn.who, txn.source_type),
-            )
-            inserted += 1
-        except sqlite3.IntegrityError:
-            pass
-    conn.commit()
+    accounts = {row["name"]: row["id"] for row in conn.execute("SELECT id, name FROM accounts")}
+    unknown_accounts = {txn.account_name for txn in txns if txn.account_name not in accounts}
     if unknown_accounts:
-        import warnings
-        warnings.warn(
-            f"Skipped transactions with unknown account names: {unknown_accounts}. "
-            "Add them with: cashflow rule add-category or check seed.py ACCOUNTS.",
-            stacklevel=2,
-        )
+        raise ValueError(f"Unknown accounts: {sorted(unknown_accounts)}. Check account names in seed.py.")
+    inserted = 0
+    with conn:
+        for txn in txns:
+            if not math.isfinite(txn.amount):
+                raise ValueError("Transaction amount must be finite")
+            existing = conn.execute(
+                "SELECT date, amount, description, account_id FROM transactions WHERE source_id = ?",
+                (txn.source_id,),
+            ).fetchone()
+            if existing and (existing["date"], existing["amount"], existing["description"], existing["account_id"]) != (
+                txn.date.isoformat(), txn.amount, txn.description, accounts[txn.account_name]
+            ):
+                raise ValueError(f"Conflicting transaction source_id {txn.source_id}; reconcile the exports before importing")
+            cursor = conn.execute(
+                "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, status, confidence, who, source_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?) ON CONFLICT(source_id) DO NOTHING",
+                (txn.source_id, txn.date.isoformat(), txn.amount, txn.description, txn.merchant,
+                 accounts[txn.account_name], txn.who, txn.source_type),
+            )
+            inserted += cursor.rowcount
     return inserted
+
 
 def store_income(conn: sqlite3.Connection, records: list[dict]) -> int:
     inserted = 0
-    for rec in records:
-        try:
-            conn.execute(
+    with conn:
+        for rec in records:
+            if not math.isfinite(rec["amount"]):
+                raise ValueError("Income amount must be finite")
+            cursor = conn.execute(
                 "INSERT INTO income (source_id, date, amount, source, description) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(source_id) DO NOTHING",
                 (rec["source_id"], rec["date"].isoformat(), rec["amount"],
                  rec["source"], rec.get("description", "")),
             )
-            inserted += 1
-        except sqlite3.IntegrityError:
-            pass
-    conn.commit()
+            inserted += cursor.rowcount
     return inserted

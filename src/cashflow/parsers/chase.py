@@ -1,3 +1,4 @@
+from collections import Counter
 import csv
 import hashlib
 import re
@@ -38,14 +39,17 @@ def _make_source_id(row: dict) -> str:
     raw = f"{row['Transaction Date']}|{row['Description']}|{row['Amount']}"
     return f"chase-csv-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 
-def parse_chase_csv(path: Path) -> list[ParsedTransaction]:
+def parse_chase_csv(path: Path, account_name: str = "Chase Prime Visa") -> list[ParsedTransaction]:
+    if account_name not in {"Chase Prime Visa", "Chase Freedom"}:
+        raise ValueError(f"Unsupported Chase account: {account_name}")
     transactions = []
-    with open(path, newline="", encoding="utf-8") as f:
+    occurrences = Counter()
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row_num, row in enumerate(reader, start=2):
             try:
                 amount = float(row["Amount"])
-                if amount > 0:
+                if row.get("Type", "").strip().lower() == "payment":
                     continue
                 amount = -amount
                 txn_date = datetime.strptime(row["Transaction Date"], "%m/%d/%Y").date()
@@ -54,11 +58,15 @@ def parse_chase_csv(path: Path) -> list[ParsedTransaction]:
                 raise ParseError(path.name, row_num, f"missing column {e}") from None
             except ValueError as e:
                 raise ParseError(path.name, row_num, str(e)) from None
+            source_id = ("freedom-" if account_name == "Chase Freedom" else "") + _make_source_id(row)
+            occurrences[source_id] += 1
+            if occurrences[source_id] > 1:
+                source_id += f"-occurrence-{occurrences[source_id]}"
             transactions.append(ParsedTransaction(
                 date=txn_date, amount=amount, description=description,
                 merchant=_normalize_merchant(description),
-                source_id=_make_source_id(row), source_type="csv",
-                account_name="Chase Prime Visa",
+                source_id=source_id, source_type="csv",
+                account_name=account_name,
                 order_number=_extract_order_number(description),
             ))
     return transactions

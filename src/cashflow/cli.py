@@ -1,4 +1,6 @@
-import re
+import csv
+import math
+from calendar import monthrange
 import sqlite3
 import click
 from datetime import date
@@ -22,9 +24,56 @@ from cashflow.parsers.expense_report import parse_expense_report
 from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.dedup_paypal import link_paypal_to_cards
-from cashflow.dedup_checking import link_checking_duplicates
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
+
+PARSERS = {
+    "chase": parse_chase_csv, "bofa_cc": parse_bofa_cc_csv,
+    "capital": parse_capital_one_csv, "citi": parse_citi,
+    "apple": parse_apple_card_csv, "amex": parse_amex_csv,
+    "robinhood": parse_robinhood_csv, "wells": parse_wells_fargo_csv,
+    "paypal": parse_paypal_csv, "target": parse_target_csv,
+}
+CSV_HEADERS = {
+    "chase": {"Transaction Date", "Description", "Type", "Amount"},
+    "bofa_cc": {"Posted Date", "Reference Number", "Payee", "Amount"},
+    "checking": {"Date", "Description", "Amount", "Running Bal."},
+    "capital": {"Transaction Date", "Card No.", "Debit", "Credit"},
+    "apple": {"Transaction Date", "Purchased By", "Amount (USD)"},
+    "amex": {"Date", "Card Member", "Reference", "Amount"},
+    "robinhood": {"Date", "Time", "Cardholder", "Amount", "Status", "Type"},
+    "wells": {"DATE", "DESCRIPTION", "AMOUNT"},
+    "paypal": {"Date", "Gross", "Balance Impact", "Transaction ID"},
+    "target": {"Transaction Date", "Ref#", "Transaction Type", "Amount"},
+}
+
+
+def _detect_source(path: Path) -> str:
+    if path.suffix.lower() == ".txt":
+        if "amazon" in path.name.lower():
+            return "amazon"
+        if "citi" in path.name.lower():
+            return "citi"
+    with path.open(newline="", encoding="utf-8-sig") as stream:
+        reader = csv.reader(stream)
+        for index, row in enumerate(reader):
+            headers = {value.strip().strip('"') for value in row}
+            for source, required in CSV_HEADERS.items():
+                if required <= headers and (index == 0 or source == "checking"):
+                    return source
+            # Checking exports have a short balance-summary preamble.
+            if index >= 20:
+                break
+    raise ParseError(path.name, None, "unrecognized export format; use a supported bank CSV or named amazon/citi .txt scrape")
+
+
+def _record_import(conn, path: Path) -> None:
+    conn.execute(
+        "INSERT INTO ingest_state (source, last_sync) VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+        (str(path.resolve()),),
+    )
+    conn.commit()
+
 
 def _format_error(e):
     """Format an exception into user-friendly error lines.
@@ -85,6 +134,7 @@ def cli(ctx, db, debug):
     conn = get_connection(db_path) if db_path else get_connection()
     seed_all(conn)
     ctx.obj["conn"] = conn
+    ctx.call_on_close(conn.close)
 
 
 def main():
@@ -94,7 +144,7 @@ def main():
 @cli.command()
 @click.option("--files", type=click.Path(exists=True), multiple=True, help="Path to CSV file or inbox directory. Can be repeated.")
 @click.option("--email", is_flag=True, help="Poll Gmail for new emails. (Not yet implemented.)")
-@click.option("--auto", is_flag=True, help="Run both email and file ingestion.")
+@click.option("--auto", is_flag=True, help="Import ~/cashflow/inbox/ when --files is omitted; email is not supported.")
 @click.option("--expense-report", type=click.Path(exists=True), help="Path to expense report .xlsx file or directory.")
 @click.pass_context
 def ingest(ctx, files, email, auto, expense_report):
@@ -132,10 +182,15 @@ def ingest(ctx, files, email, auto, expense_report):
                     if not txn:
                         click.secho(f"    No match: {row.date} ${row.amount:,.2f} {row.vendor}", fg="yellow")
         return
-    if email or auto:
-        click.echo("Email ingestion not yet implemented.")
+    if email:
+        raise click.ClickException("Email ingestion is not implemented. Use --files or --auto for local exports.")
+    if auto and not files:
+        inbox = Path.home() / "cashflow" / "inbox"
+        if not inbox.is_dir():
+            raise click.ClickException(f"Inbox directory does not exist: {inbox}")
+        files = (str(inbox),)
     if not files and not auto:
-        click.echo("No source specified. Use --files PATH or --email.")
+        click.echo("No source specified. Use --files PATH or --auto.")
         return
     total = 0
     csv_files = []
@@ -147,53 +202,31 @@ def ingest(ctx, files, email, auto, expense_report):
             csv_files += sorted(path.glob("*.csv")) + sorted(path.glob("*.CSV")) + sorted(path.glob("*.txt"))
     for csv_file in csv_files:
         click.echo(f"Parsing {csv_file.name}...")
-        if "chase" in csv_file.name.lower():
-            txns = parse_chase_csv(csv_file)
-        elif "amazon" in csv_file.name.lower():
+        source = _detect_source(csv_file)
+        if source == "amazon":
             orders = parse_amazon_orders(csv_file)
             items_stored = store_amazon_orders(conn, orders)
+            _record_import(conn, csv_file)
             click.echo(f"  {items_stored} new Amazon items from {len(orders)} orders")
             total += items_stored
             continue
-        elif "stmt" in csv_file.name.lower() or "bofa" in csv_file.name.lower():
+        if source == "checking":
             check_expenses, check_income = parse_bofa_checking_csv(csv_file)
-            if check_expenses:
-                stored = store_transactions(conn, check_expenses)
-                click.echo(f"  {stored} new checking expenses")
-                total += stored
-            if check_income:
-                inc_stored = store_income(conn, check_income)
-                click.echo(f"  {inc_stored} new income records")
-                total += inc_stored
+            stored = store_transactions(conn, check_expenses)
+            inc_stored = store_income(conn, check_income)
+            _record_import(conn, csv_file)
+            click.echo(f"  {stored} new checking expenses; {inc_stored} new income records")
+            total += stored + inc_stored
             continue
-        elif re.search(r"_\d{4}\.csv$", csv_file.name, re.IGNORECASE):
-            txns = parse_bofa_cc_csv(csv_file)
-        elif "capital" in csv_file.name.lower():
-            if "wendy" in csv_file.name.lower():
-                acct = "Capital One Wendy"
-            else:
-                acct = "Capital One Venture"
-            txns = parse_capital_one_csv(csv_file)
-            for t in txns:
-                t.account_name = acct
-        elif "citi" in csv_file.name.lower():
-            txns = parse_citi(csv_file)
-        elif "apple" in csv_file.name.lower():
-            txns = parse_apple_card_csv(csv_file)
-        elif "amex" in csv_file.name.lower():
-            txns = parse_amex_csv(csv_file)
-        elif "robinhood" in csv_file.name.lower():
-            txns = parse_robinhood_csv(csv_file)
-        elif "wells" in csv_file.name.lower():
-            txns = parse_wells_fargo_csv(csv_file)
-        elif "paypal" in csv_file.name.lower():
-            txns = parse_paypal_csv(csv_file)
-        elif "transaction" in csv_file.name.lower():
-            txns = parse_target_csv(csv_file)
+        if source == "chase" and "freedom" in csv_file.name.lower():
+            txns = parse_chase_csv(csv_file, account_name="Chase Freedom")
         else:
-            click.echo(f"  Skipped — no parser for {csv_file.name}")
-            continue
+            txns = PARSERS[source](csv_file)
+        if source == "capital" and "wendy" in csv_file.name.lower():
+            for txn in txns:
+                txn.account_name = "Capital One Wendy"
         stored = store_transactions(conn, txns)
+        _record_import(conn, csv_file)
         click.echo(f"  {stored} new transactions ({len(txns) - stored} duplicates skipped)")
         total += stored
     click.echo(f"\nDone. {total} transactions ingested.")
@@ -218,11 +251,6 @@ def ingest(ctx, files, email, auto, expense_report):
     paypal_linked = link_paypal_to_cards(conn)
     if paypal_linked > 0:
         click.echo(f"  PayPal: {paypal_linked} transactions linked to card charges")
-
-    # Link checking duplicates from overlapping exports
-    checking_linked = link_checking_duplicates(conn)
-    if checking_linked > 0:
-        click.echo(f"  Checking dedup: {checking_linked} duplicates linked")
 
 @cli.command()
 @click.pass_context
@@ -439,26 +467,30 @@ def fees(ctx):
         "FROM transactions t "
         "JOIN accounts a ON t.account_id = a.id "
         "JOIN categories c ON t.category_id = c.id "
-        "WHERE c.name = 'Credit Card Fees' AND t.canonical_id IS NULL "
+        "WHERE c.name = 'Credit Card Fees' AND t.canonical_id IS NULL AND t.amount > 0 "
+        "AND (LOWER(t.merchant || ' ' || t.description) LIKE '%annual%' "
+        "OR LOWER(t.merchant || ' ' || t.description) LIKE '%member fee%' "
+        "OR LOWER(t.merchant || ' ' || t.description) LIKE '%membership fee%') "
         "ORDER BY t.date DESC"
     ).fetchall()
     if not rows:
         click.secho("No annual fees found. Categorize fee transactions as 'Credit Card Fees' first.", fg="yellow")
         return
 
-    # Deduplicate: show the most recent charge per account+merchant+amount
+    # Show the most recent fee per account and merchant even if its price changed.
     seen = {}
     for r in rows:
-        key = (r["account"], r["merchant"], r["amount"])
+        key = (r["account"], r["merchant"])
         if key not in seen:
             seen[key] = r
 
     click.echo(f"\n{'Card / Fee':<35} {'Account':<22} {'Amount':>10} {'Last Charged':<14} {'Next Expected':<14} {'Days':>5}")
     click.echo("-" * 105)
     today = date.today()
-    for (account, merchant, amount), r in sorted(seen.items(), key=lambda x: x[1]["date"]):
+    for (account, merchant), r in sorted(seen.items(), key=lambda x: x[1]["date"]):
+        amount = r["amount"]
         last = date.fromisoformat(r["date"])
-        next_due = date(last.year + 1, last.month, last.day)
+        next_due = date(last.year + 1, last.month, min(last.day, monthrange(last.year + 1, last.month)[1]))
         days_until = (next_due - today).days
         if days_until < 0:
             days_str = "PAST"
@@ -474,7 +506,7 @@ def fees(ctx):
             click.secho(line, fg=color)
         else:
             click.echo(line)
-    click.echo(f"\nTotal annual fees: ${sum(r['amount'] for r in seen.values()):,.2f}/year")
+    click.echo(f"\nObserved annual fees (renewal estimates): ${sum(r['amount'] for r in seen.values()):,.2f}/year")
 
 
 @cli.command()
@@ -488,6 +520,8 @@ def reimburse(ctx, txn_id, amount):
     if not txn:
         click.secho(f"Transaction {txn_id} not found.", fg="red")
         return
+    if not math.isfinite(amount):
+        raise click.BadParameter("Reimbursement must be finite", param_hint="amount")
     if amount > txn["amount"]:
         click.secho(f"Reimbursement ${amount:,.2f} exceeds transaction amount ${txn['amount']:,.2f}.", fg="red")
         return
@@ -644,6 +678,8 @@ def rule_list(ctx):
 def rule_set(ctx, pattern, category_name):
     """Create or update a merchant rule. Recategorizes matching transactions."""
     conn = ctx.obj["conn"]
+    if not pattern.strip():
+        raise click.BadParameter("Rule pattern must not be empty", param_hint="pattern")
 
     cat = conn.execute("SELECT id, name FROM categories WHERE name = ?", (category_name,)).fetchone()
     if not cat:
@@ -659,7 +695,7 @@ def rule_set(ctx, pattern, category_name):
     existing = conn.execute("SELECT id FROM merchant_rules WHERE pattern = ?", (pattern,)).fetchone()
     if existing:
         conn.execute(
-            "UPDATE merchant_rules SET category_id = ?, source = 'manual' WHERE id = ?",
+            "UPDATE merchant_rules SET category_id = ?, source = 'manual', confidence = 100 WHERE id = ?",
             (cat["id"], existing["id"]),
         )
         click.echo(f"Updated rule: '{pattern}' -> {cat['name']}")
@@ -673,7 +709,7 @@ def rule_set(ctx, pattern, category_name):
     # Apply to matching transactions
     updated = conn.execute(
         "UPDATE transactions SET category_id = ?, status = 'confirmed', confidence = 100 "
-        "WHERE canonical_id IS NULL AND LOWER(merchant) LIKE '%' || LOWER(?) || '%'",
+        "WHERE canonical_id IS NULL AND instr(LOWER(merchant), LOWER(?)) > 0",
         (cat["id"], pattern),
     ).rowcount
     conn.commit()

@@ -2,6 +2,7 @@ import json
 import os
 import re
 import sqlite3
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -11,9 +12,11 @@ def categorize_by_rules(conn: sqlite3.Connection) -> tuple[int, int]:
 
     Returns (matched_count, unmatched_count).
     Matched transactions get status='confirmed' and the rule's category_id.
+    More specific (longer) patterns win; equal lengths favor the newest rule.
     """
     rules = conn.execute(
-        "SELECT id, pattern, category_id, confidence FROM merchant_rules"
+        "SELECT id, pattern, category_id, confidence FROM merchant_rules "
+        "WHERE trim(pattern) != '' ORDER BY length(pattern) DESC, id DESC"
     ).fetchall()
 
     pending = conn.execute(
@@ -99,6 +102,10 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
     # OpenAI-compatible proxies often use "apikey" or "Authorization: Bearer"
     api_key_header = os.environ.get("CASHFLOW_LLM_KEY_HEADER", "apikey")
     model = os.environ.get("CASHFLOW_LLM_MODEL", "claude-sonnet-4-5-20250929")
+    native_anthropic = urlsplit(api_url).path.rstrip("/").endswith("/v1/messages")
+    headers = {api_key_header: api_key, "Content-Type": "application/json"}
+    if native_anthropic:
+        headers["anthropic-version"] = "2023-06-01"
 
     confirmed = 0
     still_pending = 0
@@ -112,38 +119,47 @@ def categorize_by_llm(conn: sqlite3.Connection) -> tuple[int, int]:
             )
 
             try:
+                payload = {
+                    "model": model,
+                    "max_tokens": 100,
+                    "messages": [{"role": "user", "content": user_msg}],
+                }
+                if native_anthropic:
+                    payload["system"] = system_prompt
+                else:
+                    payload["messages"].insert(0, {"role": "system", "content": system_prompt})
                 resp = client.post(
                     api_url,
-                    headers={api_key_header: api_key, "Content-Type": "application/json"},
-                    json={
-                        "model": model,
-                        "max_tokens": 100,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_msg},
-                        ],
-                    },
+                    headers=headers,
+                    json=payload,
                 )
                 resp.raise_for_status()
                 data = resp.json()
                 # Handle both OpenAI-compatible format (choices[]) and
                 # native Anthropic format (content[])
                 if "choices" in data:
-                    raw = data["choices"][0]["message"]["content"].strip()
+                    raw = data["choices"][0]["message"]["content"]
                 else:
-                    raw = data["content"][0]["text"].strip()
+                    raw = data["content"][0]["text"]
+                if not isinstance(raw, str):
+                    raise ValueError("LLM response content must be text")
+                raw = raw.strip()
                 # Strip markdown code fences if present
                 if raw.startswith("```"):
                     raw = re.sub(r"^```(?:json)?\n?", "", raw)
                     raw = re.sub(r"\n?```$", "", raw)
                 result = json.loads(raw)
                 category_name = result["category"]
+                if not isinstance(category_name, str):
+                    raise ValueError("LLM category must be a string")
                 # Handle confidence as float 0-1 or int 0-100
                 conf_raw = result["confidence"]
-                if isinstance(conf_raw, float) and conf_raw <= 1.0:
+                if type(conf_raw) is float and 0 <= conf_raw <= 1:
                     confidence = int(conf_raw * 100)
+                elif type(conf_raw) is int and 0 <= conf_raw <= 100:
+                    confidence = conf_raw
                 else:
-                    confidence = int(conf_raw)
+                    raise ValueError("LLM confidence must be a probability or integer percentage")
             except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError, httpx.HTTPError):
                 still_pending += 1
                 continue
@@ -185,7 +201,7 @@ def confirm_transaction(
         "SELECT merchant FROM transactions WHERE id = ?", (txn_id,)
     ).fetchone()
 
-    if txn:
+    if txn and txn["merchant"].strip():
         merchant = txn["merchant"]
         existing = conn.execute(
             "SELECT id FROM merchant_rules WHERE pattern = ?", (merchant,)
@@ -193,7 +209,7 @@ def confirm_transaction(
 
         if existing:
             conn.execute(
-                "UPDATE merchant_rules SET category_id = ?, source = 'learned' "
+                "UPDATE merchant_rules SET category_id = ?, source = 'learned', confidence = 100 "
                 "WHERE id = ?",
                 (category_id, existing["id"]),
             )

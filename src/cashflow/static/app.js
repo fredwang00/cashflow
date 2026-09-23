@@ -66,8 +66,8 @@ const $txBody        = document.getElementById('tx-body');
 const $freshness     = document.getElementById('freshness');
 
 // ── API ───────────────────────────────────────────────────────────────────
-async function fetchJson(url) {
-    const res = await fetch(url);
+async function fetchJson(url, options) {
+    const res = await fetch(url, options);
     if (!res.ok) throw new Error(url + ': ' + res.status);
     return res.json();
 }
@@ -157,6 +157,7 @@ function applyFilterAndRender() {
 }
 
 function renderCategoryChart(byCategory) {
+    if (typeof Chart === 'undefined') return;
     const sorted = [...byCategory].sort(function(a, b) { return b.total - a.total; });
     const labels = sorted.map(function(c) { return c.category || 'Uncategorized'; });
     const data = sorted.map(function(c) { return c.total; });
@@ -213,6 +214,7 @@ document.querySelectorAll('.trend-filter-btn').forEach(function(btn) {
 // ── Render: Trend Chart ───────────────────────────────────────────────────
 function renderTrendChart(yearly) {
     lastYearlyData = yearly;
+    if (typeof Chart === 'undefined') return;
     const now = new Date();
     const isCurrentYear = (currentYear === now.getFullYear());
     const currentM = isCurrentYear ? now.getMonth() + 1 : 12;
@@ -226,7 +228,7 @@ function renderTrendChart(yearly) {
     const spending = visibleMonths.map(function(m, i) {
         const mo = visibleMonths[i].month;
         if (isCurrentYear && mo > currentM) return null;
-        if (trendView === 'baseline') return m.spending_baseline || m.spending;
+        if (trendView === 'baseline') return m.spending_baseline ?? m.spending;
         if (trendView === 'oneoffs') return m.spending_oneoffs || 0;
         return m.spending;
     });
@@ -239,7 +241,7 @@ function renderTrendChart(yearly) {
     const net = visibleMonths.map(function(m, i) {
         const mo = visibleMonths[i].month;
         if (isCurrentYear && mo > currentM) return null;
-        if (trendView === 'baseline') return (m.income - (m.spending_baseline || m.spending));
+        if (trendView === 'baseline') return (m.income - (m.spending_baseline ?? m.spending));
         if (trendView === 'oneoffs') return null;
         return m.surplus;
     });
@@ -340,9 +342,8 @@ function sortTransactions() {
 function renderTxRows(txs) {
     while ($txBody.firstChild) $txBody.removeChild($txBody.firstChild);
 
-    var rows = txs.slice(0, 200);
-    for (let i = 0; i < rows.length; i++) {
-        let tx = rows[i];
+    for (let i = 0; i < txs.length; i++) {
+        let tx = txs[i];
         var tr = document.createElement('tr');
 
         var tdDate = document.createElement('td');
@@ -384,20 +385,12 @@ function renderTxRows(txs) {
         btn.textContent = tx.is_one_off ? '★' : '☆';
         btn.dataset.id = tx.id;
         btn.dataset.label = tx.one_off_label || '';
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', async function() {
             var id = parseInt(this.dataset.id);
             var currentLabel = this.dataset.label;
-            var newLabel = this.classList.contains('active') ? '' : (prompt('One-off label (optional):', currentLabel) ?? currentLabel);
+            var newLabel = this.classList.contains('active') ? '' : prompt('One-off label (optional):', currentLabel);
             if (newLabel === null) return; // cancelled
-            fetch('/api/transactions/' + id + '/toggle-oneoff?label=' + encodeURIComponent(newLabel), { method: 'POST' })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    btn.classList.toggle('active', data.is_one_off);
-                    btn.textContent = data.is_one_off ? '★' : '☆';
-                    btn.dataset.label = newLabel;
-                    btn.title = newLabel;
-                    tx.is_one_off = data.is_one_off ? 1 : 0;
-                });
+            await updateTransaction(btn, '/api/transactions/' + id + '/toggle-oneoff?label=' + encodeURIComponent(newLabel));
         });
         tdOneOff.appendChild(btn);
         tr.appendChild(tdOneOff);
@@ -408,21 +401,27 @@ function renderTxRows(txs) {
         rBtn.textContent = tx.is_reimbursed ? '$' : '-';
         rBtn.title = tx.is_reimbursed ? 'Reimbursed' : 'Mark as reimbursed';
         rBtn.dataset.id = tx.id;
-        rBtn.addEventListener('click', function() {
+        rBtn.addEventListener('click', async function() {
             var id = parseInt(this.dataset.id);
-            fetch('/api/transactions/' + id + '/toggle-reimbursed', { method: 'POST' })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    rBtn.classList.toggle('active', data.is_reimbursed);
-                    rBtn.textContent = data.is_reimbursed ? '$' : '-';
-                    rBtn.title = data.is_reimbursed ? 'Reimbursed' : 'Mark as reimbursed';
-                    tx.is_reimbursed = data.is_reimbursed ? 1 : 0;
-                });
+            await updateTransaction(rBtn, '/api/transactions/' + id + '/toggle-reimbursed');
         });
         tdReimb.appendChild(rBtn);
         tr.appendChild(tdReimb);
 
         $txBody.appendChild(tr);
+    }
+}
+
+async function updateTransaction(button, url) {
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+        await fetchJson(url, { method: 'POST' });
+        await loadMonth();
+    } catch (err) {
+        alert('Could not update transaction: ' + err.message);
+    } finally {
+        button.disabled = false;
     }
 }
 
@@ -468,13 +467,18 @@ document.getElementById('next-month').addEventListener('click', function() {
 });
 
 // ── Data Loading ──────────────────────────────────────────────────────────
+let monthRequest = 0;
+
 async function loadMonth() {
+    const request = ++monthRequest;
     updateMonthLabel();
 
     var results = await Promise.all([
         fetchJson('/api/monthly/' + currentYear + '/' + currentMonth),
         fetchJson('/api/yearly/' + currentYear),
     ]);
+
+    if (request !== monthRequest) return;
 
     var monthly = results[0];
     var yearly = results[1];
@@ -501,17 +505,8 @@ async function init() {
     updateMonthLabel();
 
     try {
-        var results = await Promise.all([
-            fetchJson('/api/status'),
-            fetchJson('/api/monthly/' + currentYear + '/' + currentMonth),
-            fetchJson('/api/yearly/' + currentYear),
-        ]);
-
-        renderStatus(results[0]);
-        allByCategory = results[1].by_category || [];
-        applyFilterAndRender();
-        renderTransactions(results[1].transactions || []);
-        renderTrendChart(results[2]);
+        renderStatus(await fetchJson('/api/status'));
+        await loadMonth();
     } catch (err) {
         console.error('Failed to load dashboard:', err);
     }

@@ -28,7 +28,7 @@ ACCOUNTS = [
     ("Amex Gold", "credit", "Amex"),
     ("Robinhood Gold", "credit", "Robinhood"),
     ("Wells Fargo", "credit", "Wells Fargo"),
-    ("Checking", "debit", "Chase"),
+    ("Checking", "debit", "BofA"),
     ("PayPal", "cash", "PayPal"),
 ]
 GOALS = [
@@ -50,6 +50,11 @@ def seed_categories(conn: sqlite3.Connection) -> None:
 def seed_accounts(conn: sqlite3.Connection) -> None:
     for name, acct_type, institution in ACCOUNTS:
         conn.execute("INSERT OR IGNORE INTO accounts (name, type, institution, is_active) VALUES (?, ?, ?, 1)", (name, acct_type, institution))
+    # Repair the original seed's incorrect institution without changing custom accounts.
+    conn.execute(
+        "UPDATE accounts SET institution = 'BofA' "
+        "WHERE name = 'Checking' AND institution = 'Chase' AND type = 'debit'"
+    )
     conn.commit()
 
 def seed_goals(conn: sqlite3.Connection) -> None:

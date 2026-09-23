@@ -7,27 +7,27 @@ _DATE_WINDOW = 7  # days of tolerance for card posting delay
 
 
 def _find_transaction(conn, row):
-    """Find a matching transaction: exact date first, then within +/- 7 days."""
+    """Return a unique exact-date candidate, or a unique posting-window candidate."""
     # Exact date match
-    txn = conn.execute(
+    candidates = conn.execute(
         "SELECT id, is_reimbursed FROM transactions "
         "WHERE date = ? AND ABS(amount - ?) < 0.005 "
         "AND canonical_id IS NULL",
         (row.date.isoformat(), row.amount),
-    ).fetchone()
-    if txn:
-        return txn
+    ).fetchall()
+    if candidates:
+        return candidates[0] if len(candidates) == 1 else None
 
     # Fuzzy date match: card may post days before or after expense
     start = (row.date - timedelta(days=_DATE_WINDOW)).isoformat()
     end = (row.date + timedelta(days=_DATE_WINDOW)).isoformat()
-    txn = conn.execute(
+    candidates = conn.execute(
         "SELECT id, is_reimbursed FROM transactions "
         "WHERE date BETWEEN ? AND ? AND ABS(amount - ?) < 0.005 "
         "AND canonical_id IS NULL",
         (start, end, row.amount),
-    ).fetchone()
-    return txn
+    ).fetchall()
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def match_expense_report(
@@ -37,6 +37,7 @@ def match_expense_report(
 
     Tries exact date first, then falls back to a +/- 7 day window
     to handle card posting delays (common with Uber, hotels, etc.).
+    Ambiguous candidates remain unmatched for manual review.
 
     Returns (matched, already_reimbursed, unmatched).
     """

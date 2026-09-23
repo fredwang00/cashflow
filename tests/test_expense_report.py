@@ -2,6 +2,8 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from cashflow.db import create_schema, store_transactions
 from cashflow.models import ParsedTransaction
 from cashflow.parsers.expense_report import parse_expense_report
@@ -141,3 +143,20 @@ def test_match_fuzzy_date_no_false_match(tmp_path):
     matched, already, unmatched = match_expense_report(conn, rows)
     assert matched == 0
     assert unmatched == 1
+
+
+@pytest.mark.parametrize("report_day, card_days", [(12, [12, 12]), (20, [18, 21])])
+def test_ambiguous_expenses_remain_unmatched(tmp_path, report_day, card_days):
+    from cashflow.parsers.expense_report import ExpenseRow
+
+    conn = _make_db(tmp_path)
+    store_transactions(conn, [
+        ParsedTransaction(date=date(2025, 4, day), amount=53.94,
+                          description="UBER *TRIP", merchant="Uber",
+                          source_id=f"card-{i}", source_type="csv",
+                          account_name="Chase Prime Visa")
+        for i, day in enumerate(card_days)
+    ])
+    expense = ExpenseRow(date(2025, 4, report_day), 53.94, "Uber", "Taxi")
+    assert match_expense_report(conn, [expense]) == (0, 0, 1)
+    assert conn.execute("SELECT COUNT(*) FROM transactions WHERE is_reimbursed = 1").fetchone()[0] == 0

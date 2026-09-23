@@ -1,4 +1,8 @@
 from pathlib import Path
+
+import pytest
+
+from cashflow.errors import ParseError
 from cashflow.parsers.target import parse_target_csv
 
 FIXTURE = Path(__file__).parent / "fixtures" / "target_sample.csv"
@@ -53,3 +57,14 @@ def test_parse_target_csv_sets_account_name():
 def test_parse_target_csv_sets_source_type():
     txns = parse_target_csv(FIXTURE)
     assert all(t.source_type == "csv" for t in txns)
+
+
+@pytest.mark.parametrize("row", ['2026-03-11,2026-03-11,REF', '2026-03-11,2026-03-11,REF,66.43,Target,2410,Sale,extra'])
+def test_malformed_row_reports_file_and_row(tmp_path, row):
+    path = tmp_path / "malformed.csv"
+    path.write_text('Transaction Date,Posting Date,Ref#,Amount,Description,Last 4 of Card/Account,Transaction Type' + "\n" + row + "\n")
+    with pytest.raises(ParseError) as error:
+        parse_target_csv(path)
+    assert error.value.file == "malformed.csv"
+    assert error.value.row == 2
+    assert "column" in error.value.message

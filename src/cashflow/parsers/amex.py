@@ -25,13 +25,15 @@ def _make_source_id(row: dict) -> str:
 
 def parse_amex_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row_num, row in enumerate(reader, start=2):
             try:
                 amount = float(row["Amount"])
                 txn_date = datetime.strptime(row["Date"], "%m/%d/%Y").date()
                 description = row["Description"].strip()
+                if amount < 0 and "PAYMENT" in description.upper() and "THANK YOU" in description.upper():
+                    continue
                 merchant = _clean_merchant(description)
                 card_member = row["Card Member"].strip().upper()
             except KeyError as e:

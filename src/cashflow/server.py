@@ -2,11 +2,12 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Path as ApiPath, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from cashflow.db import DEFAULT_DB_PATH
+from cashflow.queries import get_month_spending, get_ytd_spending
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -30,22 +31,14 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         today = date.today()
         y, m = today.year, today.month
 
-        spending = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM transactions "
-            "WHERE canonical_id IS NULL AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
-            (str(y), f"{m:02d}"),
-        ).fetchone()["total"]
+        spending = get_month_spending(conn, y, m)
 
         income = conn.execute(
             "SELECT COALESCE(SUM(amount), 0) as total FROM income WHERE strftime('%Y', date) = ?",
             (str(y),),
         ).fetchone()["total"]
 
-        ytd_spending = conn.execute(
-            "SELECT COALESCE(SUM(amount), 0) as total FROM transactions "
-            "WHERE canonical_id IS NULL AND strftime('%Y', date) = ?",
-            (str(y),),
-        ).fetchone()["total"]
+        ytd_spending = get_ytd_spending(conn, y)
 
         review_count = conn.execute(
             "SELECT COUNT(*) as c FROM transactions WHERE canonical_id IS NULL AND status = 'pending'"
@@ -89,7 +82,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         }
 
     @app.get("/api/monthly/{year}/{month}")
-    def api_monthly(year: int, month: int):
+    def api_monthly(year: int, month: int = ApiPath(ge=1, le=12)):
         conn = _get_db(db_path)
         txns = conn.execute(
             "SELECT t.id, t.date, t.amount, t.merchant, t.description, t.status, t.who, "
@@ -115,7 +108,13 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         }
 
     @app.get("/api/transactions")
-    def api_transactions(year: int = 2026, month: int | None = None, limit: int = 100):
+    def api_transactions(
+        year: int | None = None,
+        month: int | None = Query(default=None, ge=1, le=12),
+        limit: int = 100,
+    ):
+        if year is None:
+            year = date.today().year
         conn = _get_db(db_path)
         if month:
             rows = conn.execute(
@@ -155,7 +154,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
             ).fetchone()["total"]
             sp_baseline = conn.execute(
                 "SELECT COALESCE(SUM(amount - reimbursed_amount), 0) as total FROM transactions "
-                "WHERE canonical_id IS NULL AND is_one_off = 0 AND is_reimbursed = 0 AND reimbursed_amount < amount AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
+                "WHERE canonical_id IS NULL AND is_one_off = 0 AND is_reimbursed = 0 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
                 (str(year), f"{mo:02d}"),
             ).fetchone()["total"]
             sp_oneoffs = conn.execute(
@@ -185,7 +184,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         txn = conn.execute("SELECT id, is_one_off FROM transactions WHERE id = ?", (txn_id,)).fetchone()
         if not txn:
             conn.close()
-            return {"error": "not found"}
+            raise HTTPException(status_code=404, detail="Transaction not found")
         new_val = 0 if txn["is_one_off"] else 1
         conn.execute(
             "UPDATE transactions SET is_one_off = ?, one_off_label = ? WHERE id = ?",
@@ -203,7 +202,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         txn = conn.execute("SELECT id, amount, is_reimbursed FROM transactions WHERE id = ?", (txn_id,)).fetchone()
         if not txn:
             conn.close()
-            return {"error": "not found"}
+            raise HTTPException(status_code=404, detail="Transaction not found")
         new_val = 0 if txn["is_reimbursed"] else 1
         new_reimbursed = txn["amount"] if new_val else 0
         conn.execute("UPDATE transactions SET is_reimbursed = ?, reimbursed_amount = ? WHERE id = ?", (new_val, new_reimbursed, txn_id))

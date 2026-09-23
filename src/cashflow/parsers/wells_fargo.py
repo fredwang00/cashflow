@@ -25,9 +25,11 @@ def _make_source_id(row: dict) -> str:
 
 def parse_wells_fargo_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row_num, row in enumerate(reader, start=2):
+            if None in row or any(value is None for value in row.values()):
+                raise ParseError(path.name, row_num, "column count does not match header")
             try:
                 description = row["DESCRIPTION"].strip()
                 if description in SKIP_DESCRIPTIONS:

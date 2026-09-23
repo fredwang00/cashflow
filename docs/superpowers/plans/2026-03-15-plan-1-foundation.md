@@ -1,5 +1,7 @@
 # Plan 1: Foundation — Schema, Chase CSV Ingestion, Status CLI
 
+> Historical design/implementation snapshot. Do not execute embedded setup or smoke commands against your personal database. Current behavior and commands are documented in [README](../../../README.md); known deviations are recorded in [the audit](../../2026-09-23-audit.md). Unchecked tasks are not a reliable implementation-status list.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Go from zero to ingesting Chase Prime Visa CSVs, storing categorized transactions in SQLite, and displaying burn rate via `cashflow status`.
