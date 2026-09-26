@@ -1,5 +1,5 @@
 from cashflow.seed import seed_all
-from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
+from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal, get_fsa_candidates
 
 def _insert_txn(db, amount, txn_date, status="confirmed"):
     db.execute(
@@ -80,3 +80,75 @@ def test_get_ytd_surplus_accounts_for_reimbursement(db):
     db.commit()
     surplus = get_ytd_surplus(db, 2026)
     assert abs(surplus - 4500.0) < 0.01
+
+
+def _ensure_category(db, name, cat_type="necessity"):
+    existing = db.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()
+    if existing:
+        return existing["id"]
+    db.execute("INSERT INTO categories (name, type) VALUES (?, ?)", (name, cat_type))
+    db.commit()
+    return db.execute("SELECT id FROM categories WHERE name = ?", (name,)).fetchone()["id"]
+
+
+def _insert_categorized_txn(db, amount, txn_date, category_name, merchant="test"):
+    cat_id = _ensure_category(db, category_name)
+    db.execute(
+        "INSERT INTO transactions (source_id, date, amount, description, merchant, account_id, "
+        "category_id, status, confidence, who, source_type) "
+        "VALUES (?, ?, ?, 'test', ?, 1, ?, 'confirmed', 100, 'shared', 'csv')",
+        (f"fsa-{txn_date}-{amount}-{merchant}", txn_date, amount, merchant, cat_id),
+    )
+    db.commit()
+
+
+def test_fsa_candidates_finds_medical_category(db):
+    seed_all(db)
+    _insert_categorized_txn(db, 30.0, "2026-02-23", "Medical", "CHILDRENS HOSPITAL")
+    _insert_categorized_txn(db, 72.80, "2026-06-01", "Dental", "PEDIATRIC DENTISTRY")
+    _insert_categorized_txn(db, 50.0, "2026-03-01", "Groceries", "COSTCO")
+    rows = get_fsa_candidates(db, 2026)
+    assert len(rows) == 2
+    assert sum(r["amount"] for r in rows) == 102.80
+
+
+def test_fsa_candidates_finds_eligible_merchants(db):
+    seed_all(db)
+    _insert_categorized_txn(db, 239.0, "2026-09-01", "Subscriptions", "Whoop")
+    _insert_categorized_txn(db, 102.4, "2026-09-04", "Shopping", "Leluv")
+    rows = get_fsa_candidates(db, 2026)
+    assert len(rows) == 2
+
+
+def test_fsa_candidates_excludes_other_years(db):
+    seed_all(db)
+    _insert_categorized_txn(db, 30.0, "2025-12-15", "Medical", "DOCTOR")
+    _insert_categorized_txn(db, 30.0, "2026-01-15", "Medical", "DOCTOR2")
+    rows = get_fsa_candidates(db, 2026)
+    assert len(rows) == 1
+    assert rows[0]["date"] == "2026-01-15"
+
+
+def test_fsa_candidates_excludes_linked_duplicates(db):
+    seed_all(db)
+    _insert_categorized_txn(db, 30.0, "2026-03-01", "Medical", "DOCTOR")
+    db.execute(
+        "INSERT INTO transactions (source_id, canonical_id, date, amount, description, merchant, "
+        "account_id, category_id, status, confidence, who, source_type) "
+        "VALUES ('dup-fsa', 1, '2026-03-01', 30.0, 'test', 'DOCTOR', 1, "
+        "(SELECT id FROM categories WHERE name = 'Medical'), 'confirmed', 100, 'shared', 'csv')"
+    )
+    db.commit()
+    rows = get_fsa_candidates(db, 2026)
+    assert len(rows) == 1
+
+
+def test_fsa_candidates_shows_reimbursement_status(db):
+    seed_all(db)
+    _insert_categorized_txn(db, 30.0, "2026-03-01", "Medical", "DOCTOR")
+    db.execute("UPDATE transactions SET is_reimbursed = 1, reimbursed_amount = 30.0 WHERE amount = 30.0")
+    db.commit()
+    rows = get_fsa_candidates(db, 2026)
+    assert len(rows) == 1
+    assert rows[0]["is_reimbursed"] == 1
+    assert rows[0]["reimbursed_amount"] == 30.0
