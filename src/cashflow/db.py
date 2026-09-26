@@ -112,6 +112,33 @@ CREATE TABLE IF NOT EXISTS ingest_state (
     cursor TEXT,
     metadata TEXT
 );
+CREATE TABLE IF NOT EXISTS plans (
+    id INTEGER PRIMARY KEY,
+    slug TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    parent_id INTEGER REFERENCES plans(id),
+    pick_one BOOLEAN NOT NULL DEFAULT 0,
+    kind TEXT NOT NULL CHECK (kind IN ('trip', 'home', 'vehicle', 'purchase', 'gift', 'other')),
+    status TEXT NOT NULL DEFAULT 'idea'
+        CHECK (status IN ('idea', 'researching', 'planned', 'committed', 'deferred', 'done', 'dropped')),
+    cost_low REAL,
+    cost_high REAL,
+    probability REAL CHECK (probability BETWEEN 0 AND 1),
+    earliest DATE,
+    latest DATE,
+    necessity BOOLEAN NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS plan_history (
+    id INTEGER PRIMARY KEY,
+    plan_id INTEGER NOT NULL REFERENCES plans(id),
+    changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    from_status TEXT,
+    to_status TEXT NOT NULL,
+    old_earliest DATE,
+    new_earliest DATE,
+    note TEXT
+);
 """
 
 from cashflow.models import ParsedTransaction
