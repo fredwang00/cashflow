@@ -26,6 +26,7 @@ from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.dedup_paypal import link_paypal_to_cards
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
+from cashflow.plan_cli import plan
 
 PARSERS = {
     "chase": parse_chase_csv, "bofa_cc": parse_bofa_cc_csv,
@@ -759,3 +760,6 @@ def dashboard(ctx, port):
     app = create_app(db_path)
     threading.Timer(1.0, webbrowser.open, args=[f"http://localhost:{port}"]).start()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
+
+
+cli.add_command(plan)
