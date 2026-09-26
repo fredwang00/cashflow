@@ -1,3 +1,4 @@
+from collections import Counter
 import csv
 import hashlib
 from datetime import datetime
@@ -12,17 +13,19 @@ CARDHOLDER_MAP = {
 }
 
 SKIP_TYPES = {"Payment"}
-SKIP_STATUSES = {"Declined"}
+POSTED_STATUS = "Posted"
 
 
 def _make_source_id(row: dict) -> str:
-    raw = f"{row['Date']}|{row['Time']}|{row['Merchant']}|{row['Amount']}|{row['Cardholder']}"
+    cardholder = row["Cardholder"].strip().title()
+    raw = f"{row['Date']}|{row['Time']}|{row['Merchant']}|{row['Amount']}|{cardholder}"
     return f"robinhood-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 
 
 def parse_robinhood_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
-    with open(path, newline="", encoding="utf-8") as f:
+    occurrences = Counter()
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row_num, row in enumerate(reader, start=2):
             try:
@@ -31,17 +34,18 @@ def parse_robinhood_csv(path: Path) -> list[ParsedTransaction]:
 
                 if txn_type in SKIP_TYPES:
                     continue
-                if status in SKIP_STATUSES:
+                if status != POSTED_STATUS:
                     continue
 
                 amount = float(row["Amount"])
-                if amount < 0:
+                if (row["Merchant"].strip().lower() == "points redeemed"
+                        or row.get("Description", "").strip().upper() == "POINTS REDEEMED"):
                     continue
 
                 txn_date = datetime.strptime(row["Date"], "%Y-%m-%d").date()
                 merchant = row["Merchant"].strip()
                 description = row.get("Description", "").strip() or merchant
-                cardholder = row["Cardholder"].strip()
+                cardholder = row["Cardholder"].strip().title()
             except KeyError as e:
                 raise ParseError(path.name, row_num, f"missing column {e}") from None
             except ValueError as e:
@@ -49,13 +53,18 @@ def parse_robinhood_csv(path: Path) -> list[ParsedTransaction]:
 
             who = CARDHOLDER_MAP.get(cardholder, "shared")
 
+            source_id = _make_source_id(row)
+            occurrences[source_id] += 1
+            if occurrences[source_id] > 1:
+                source_id += f"-occurrence-{occurrences[source_id]}"
+
             transactions.append(
                 ParsedTransaction(
                     date=txn_date,
                     amount=amount,
                     description=description,
                     merchant=merchant,
-                    source_id=_make_source_id(row),
+                    source_id=source_id,
                     source_type="csv",
                     account_name="Robinhood Gold",
                     who=who,

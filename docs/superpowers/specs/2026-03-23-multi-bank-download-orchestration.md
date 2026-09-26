@@ -1,5 +1,7 @@
 # Multi-bank download orchestration via Playwright CDP
 
+> Proposal only: browser download orchestration and `--download` are not implemented. Use [the current sync guide](../../household-sync.md); this document is not an executable workflow.
+
 ## Problem
 
 Downloading CSVs from 4 financial institutions (PayPal, Chase, BofA, Capital One) is a manual, forgettable chore. Previous attempts at full automation failed because Plaid tokens are brittle and browser automation requires managing credentials. Chrome's CDP now lets agents ride an already-authenticated browser session, removing the credential problem.

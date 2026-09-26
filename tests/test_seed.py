@@ -58,3 +58,25 @@ def test_seed_all_is_idempotent(db):
     seed_all(db)
     count_2 = db.execute("SELECT COUNT(*) as c FROM categories").fetchone()["c"]
     assert count_1 == count_2
+
+
+def test_checking_is_seeded_as_bofa(db):
+    seed_accounts(db)
+    assert db.execute("SELECT institution FROM accounts WHERE name = 'Checking'").fetchone()[0] == "BofA"
+
+
+def test_seed_repairs_only_legacy_checking_institution(db):
+    db.execute("INSERT INTO accounts (name, type, institution, is_active) VALUES ('Checking', 'debit', 'Chase', 0)")
+    db.execute("INSERT INTO accounts (name, type, institution) VALUES ('Custom Checking', 'debit', 'Chase')")
+    seed_accounts(db)
+    seed_accounts(db)
+    checking = db.execute("SELECT institution, is_active FROM accounts WHERE name = 'Checking'").fetchone()
+    assert tuple(checking) == ("BofA", 0)
+    assert db.execute("SELECT institution FROM accounts WHERE name = 'Custom Checking'").fetchone()[0] == "Chase"
+    assert db.execute("SELECT institution FROM accounts WHERE name = 'Chase Prime Visa'").fetchone()[0] == "Chase"
+
+
+def test_seed_preserves_custom_checking_institution(db):
+    db.execute("INSERT INTO accounts (name, type, institution) VALUES ('Checking', 'debit', 'Custom Bank')")
+    seed_accounts(db)
+    assert db.execute("SELECT institution FROM accounts WHERE name = 'Checking'").fetchone()[0] == "Custom Bank"

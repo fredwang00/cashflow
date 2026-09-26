@@ -1,5 +1,23 @@
+import json
+from unittest.mock import MagicMock, patch
+
+import httpx
+import pytest
+
 from cashflow.seed import seed_all
-from cashflow.categorize import categorize_by_rules
+from cashflow.categorize import (
+    categorize_by_llm,
+    categorize_by_rules,
+    confirm_transaction,
+    get_pending_for_review,
+)
+
+
+@pytest.fixture(autouse=True)
+def llm_environment(monkeypatch):
+    monkeypatch.setenv("CASHFLOW_LLM_KEY", "test-key")
+    monkeypatch.setenv("CASHFLOW_LLM_URL", "http://test.local/v1/chat/completions")
+    monkeypatch.setenv("CASHFLOW_LLM_KEY_HEADER", "apikey")
 
 
 def _insert_rule(db, pattern, category_name):
@@ -75,14 +93,6 @@ def test_categorize_by_rules_increments_match_count(db):
     categorize_by_rules(db)
     rule = db.execute("SELECT match_count FROM merchant_rules WHERE pattern = 'Whole Foods'").fetchone()
     assert rule["match_count"] == 2
-
-
-import os
-from unittest.mock import patch, MagicMock
-from cashflow.categorize import categorize_by_llm
-
-os.environ.setdefault("CASHFLOW_LLM_KEY", "test-key")
-os.environ.setdefault("CASHFLOW_LLM_URL", "http://test.local/v1/chat/completions")
 
 
 def _mock_llm_response(json_body, format="openai"):
@@ -189,9 +199,6 @@ def test_categorize_by_llm_skips_already_categorized(db):
     assert pending == 0
 
 
-from cashflow.categorize import confirm_transaction, get_pending_for_review
-
-
 def test_confirm_transaction_updates_status(db):
     seed_all(db)
     _insert_pending_txn(db, "t1", "Crumbl Cookies")
@@ -245,3 +252,112 @@ def test_get_pending_for_review(db):
     assert t1["suggested_category"] == "Shopping"
     t2 = [p for p in pending if p["source_id"] == "t2"][0]
     assert t2["suggested_category"] is None
+
+
+@pytest.fixture
+def llm_transport(monkeypatch):
+    """Keep the real HTTP client, replacing only its network transport."""
+    client_class = httpx.Client
+    def install(handler):
+        monkeypatch.setattr(
+            "cashflow.categorize.httpx.Client",
+            lambda **kwargs: client_class(transport=httpx.MockTransport(handler), **kwargs),
+        )
+
+    return install
+
+
+def test_learned_specific_rule_overrides_generic_rule(db):
+    seed_all(db)
+    _insert_rule(db, "Crumbl", "Shopping")
+    _insert_pending_txn(db, "corrected", "Crumbl Cookies")
+    category_id = db.execute("SELECT id FROM categories WHERE name = 'Fast Food'").fetchone()["id"]
+    confirm_transaction(db, 1, category_id)
+    _insert_pending_txn(db, "next", "CRUMBL COOKIES STORE")
+
+    assert categorize_by_rules(db) == (1, 0)
+    txn = db.execute("SELECT category_id FROM transactions WHERE source_id = 'next'").fetchone()
+    assert txn["category_id"] == category_id
+
+
+def test_empty_merchant_correction_does_not_create_match_all_rule(db):
+    seed_all(db)
+    _insert_pending_txn(db, "blank", "")
+    category_id = db.execute("SELECT id FROM categories WHERE name = 'Shopping'").fetchone()["id"]
+    confirm_transaction(db, 1, category_id)
+    _insert_pending_txn(db, "other", "Unrelated Store")
+    assert categorize_by_rules(db) == (0, 1)
+    assert db.execute("SELECT COUNT(*) FROM merchant_rules WHERE pattern = ''").fetchone()[0] == 0
+
+
+def test_native_anthropic_request(db, llm_transport, monkeypatch):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Crumbl Cookies")
+    monkeypatch.setenv("CASHFLOW_LLM_URL", "https://api.anthropic.com/v1/messages?test=1")
+    monkeypatch.setenv("CASHFLOW_LLM_KEY_HEADER", "x-api-key")
+
+    def handler(request):
+        payload = json.loads(request.content)
+        assert request.headers["anthropic-version"] == "2023-06-01"
+        assert request.headers["x-api-key"] == "test-key"
+        assert "VALID CATEGORIES" in payload["system"]
+        assert [message["role"] for message in payload["messages"]] == ["user"]
+        return httpx.Response(200, json={"content": [{"type": "text", "text": '{"category":"Fast Food","confidence":95}'}]})
+
+    llm_transport(handler)
+    assert categorize_by_llm(db) == (1, 0)
+
+
+@pytest.mark.parametrize("confidence", [101, -1, -0.5, True, "95", float("inf"), float("nan"), 95.5])
+def test_invalid_llm_confidence_remains_uncategorized(db, llm_transport, confidence):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Unknown Store")
+    response_text = json.dumps({"category": "Shopping", "confidence": confidence})
+    llm_transport(lambda request: httpx.Response(200, json={"choices": [{"message": {"content": response_text}}]}))
+
+    assert categorize_by_llm(db) == (0, 1)
+    txn = db.execute("SELECT category_id, status, confidence FROM transactions WHERE source_id = 't1'").fetchone()
+    assert tuple(txn) == (None, "pending", 0)
+
+
+@pytest.mark.parametrize("content", [None, [], 42, '{"category": [], "confidence":95}'])
+def test_malformed_llm_response_does_not_stop_next_transaction(db, llm_transport, content):
+    seed_all(db)
+    _insert_pending_txn(db, "bad", "Bad Store")
+    _insert_pending_txn(db, "good", "Good Store")
+    responses = iter([content, '{"category":"Shopping","confidence":95}'])
+    llm_transport(lambda request: httpx.Response(200, json={"choices": [{"message": {"content": next(responses)}}]}))
+
+    assert categorize_by_llm(db) == (1, 1)
+    assert db.execute("SELECT status FROM transactions WHERE source_id = 'good'").fetchone()[0] == "confirmed"
+
+
+def test_confirm_transaction_refreshes_rule_confidence(db):
+    seed_all(db)
+    _insert_rule(db, "Store", "Shopping")
+    db.execute("UPDATE merchant_rules SET confidence = 60 WHERE pattern = 'Store'")
+    _insert_pending_txn(db, "first", "Store")
+    category_id = db.execute("SELECT id FROM categories WHERE name = 'Groceries'").fetchone()["id"]
+    confirm_transaction(db, 1, category_id)
+    _insert_pending_txn(db, "next", "Store")
+    categorize_by_rules(db)
+    txn = db.execute("SELECT category_id, confidence FROM transactions WHERE source_id = 'next'").fetchone()
+    assert tuple(txn) == (category_id, 100)
+
+
+@pytest.mark.parametrize("confidence, expected", [(0.95, 95), (1.0, 100), (0.0, 0), (0.6, 60)])
+def test_probability_confidence_is_normalized(db, llm_transport, confidence, expected):
+    seed_all(db)
+    _insert_pending_txn(db, "t1", "Store")
+    response_text = json.dumps({"category": "Shopping", "confidence": confidence})
+
+    def handler(request):
+        payload = json.loads(request.content)
+        assert [message["role"] for message in payload["messages"]] == ["system", "user"]
+        assert "system" not in payload
+        return httpx.Response(200, json={"choices": [{"message": {"content": response_text}}]})
+
+    llm_transport(handler)
+    categorize_by_llm(db)
+    txn = db.execute("SELECT confidence, status FROM transactions WHERE source_id = 't1'").fetchone()
+    assert tuple(txn) == (expected, "confirmed" if expected >= 90 else "pending")

@@ -94,7 +94,7 @@ def parse_amazon_orders(path: Path, default_account: str = "fred") -> list[Amazo
     Skips cancelled orders. Detects Subscribe & Save and wife's account
     (via 'Ordered by' marker).
     """
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = path.read_text(encoding="utf-8-sig").splitlines()
 
     orders = []
     i = 0

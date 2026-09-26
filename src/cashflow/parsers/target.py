@@ -31,6 +31,8 @@ def parse_target_csv(path: Path) -> list[ParsedTransaction]:
     with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row_num, raw_row in enumerate(reader, start=2):
+            if None in raw_row or any(value is None for value in raw_row.values()):
+                raise ParseError(path.name, row_num, "column count does not match header")
             row = _clean_row(raw_row)
             try:
                 amount = float(row["Amount"])

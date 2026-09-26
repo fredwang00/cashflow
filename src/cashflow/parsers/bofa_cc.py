@@ -38,7 +38,7 @@ def _make_source_id(row: dict) -> str:
 
 def parse_bofa_cc_csv(path: Path) -> list[ParsedTransaction]:
     transactions = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row_num, row in enumerate(reader, start=2):
             try:

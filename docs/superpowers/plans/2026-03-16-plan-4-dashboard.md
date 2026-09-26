@@ -1,5 +1,7 @@
 # Plan 4: Dashboard — FastAPI Server + HTML Frontend
 
+> Historical design/implementation snapshot. Do not execute embedded setup or smoke commands against your personal database. Current behavior and commands are documented in [README](../../../README.md); known deviations are recorded in [the audit](../../2026-09-23-audit.md). Unchecked tasks are not a reliable implementation-status list.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Serve a local HTML dashboard at `http://localhost:8080` showing monthly burn rate, YTD surplus, spending by category, and a transaction list. The dashboard reads from the same SQLite database the CLI writes to.

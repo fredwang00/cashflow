@@ -1,5 +1,7 @@
 # Plan 3: Amazon Orders Parser + Reconciliation Engine
 
+> Historical design/implementation snapshot. Do not execute embedded setup or smoke commands against your personal database. Current behavior and commands are documented in [README](../../../README.md); known deviations are recorded in [the audit](../../2026-09-23-audit.md). Unchecked tasks are not a reliable implementation-status list.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Parse Amazon order screen scrapes into the `amazon_items` table, then reconcile them with Chase transactions via order number matching. This cracks the Amazon black box — every opaque Chase line item like "AMAZON MKTPL*B80X61JB1" gets linked to real product names.

@@ -24,7 +24,6 @@ SKIP_PATTERNS = [
     re.compile(r"SANTBK.*WEBXFR", re.IGNORECASE),
     re.compile(r"SANTBK.*TNTRANSFER", re.IGNORECASE),
     re.compile(r"OVERDRAFT PROTECTION", re.IGNORECASE),
-    re.compile(r"Check \d+", re.IGNORECASE),
     re.compile(r"MSPBNA BANK.*TRANSFER", re.IGNORECASE),
     re.compile(r"Interest Earned", re.IGNORECASE),
     re.compile(r"Beginning balance", re.IGNORECASE),
@@ -73,12 +72,12 @@ def _detect_income(description: str) -> str | None:
 def parse_bofa_checking_csv(path: Path) -> tuple[list[ParsedTransaction], list[dict]]:
     expenses = []
     income_records = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         for line in f:
             if line.startswith("Date,Description"):
                 break
         else:
-            return expenses, income_records
+            raise ParseError(path.name, None, "missing checking header Date,Description,Amount")
         reader = csv.DictReader(f, fieldnames=["Date", "Description", "Amount", "Running Bal."])
         for row_num, row in enumerate(reader, start=2):
             if not row["Date"] or not row["Amount"]:

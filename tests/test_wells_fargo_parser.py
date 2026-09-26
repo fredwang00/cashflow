@@ -1,4 +1,8 @@
 from pathlib import Path
+
+import pytest
+
+from cashflow.errors import ParseError
 from cashflow.parsers.wells_fargo import parse_wells_fargo_csv
 
 FIXTURE = Path(__file__).parent / "fixtures" / "wells_fargo_sample.csv"
@@ -62,3 +66,14 @@ def test_parse_cleans_merchant():
     aa = [t for t in txns if t.amount == 2126.63][0]
     assert "AMERICAN AIR" in aa.merchant
     assert "0012328548002" not in aa.merchant
+
+
+@pytest.mark.parametrize("row", ['03/24/2026', '03/24/2026,Store,-10.00,,Posted,extra'])
+def test_malformed_row_reports_file_and_row(tmp_path, row):
+    path = tmp_path / "malformed.csv"
+    path.write_text('DATE,DESCRIPTION,AMOUNT,CHECK #,STATUS' + "\n" + row + "\n")
+    with pytest.raises(ParseError) as error:
+        parse_wells_fargo_csv(path)
+    assert error.value.file == "malformed.csv"
+    assert error.value.row == 2
+    assert "column" in error.value.message

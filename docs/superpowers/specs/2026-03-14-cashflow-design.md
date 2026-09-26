@@ -1,5 +1,7 @@
 # cashflow — Household Financial Dashboard
 
+> Historical design/implementation snapshot. Do not execute embedded setup or smoke commands against your personal database. Current behavior and commands are documented in [README](../../../README.md); known deviations are recorded in [the audit](../../2026-09-23-audit.md). Unchecked tasks are not a reliable implementation-status list.
+
 Personal CLI tool + local HTML dashboard for the Wang family to track household burn rate, reconcile Amazon purchases, and stay on pace for annual financial goals.
 
 ## Problem

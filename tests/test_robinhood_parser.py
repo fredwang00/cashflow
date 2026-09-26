@@ -26,9 +26,9 @@ def test_parse_skips_negative_amounts():
 
 
 def test_parse_correct_count():
-    """Fixture: 9 rows - 1 payment - 2 declined - 1 points redemption = 5 kept."""
+    """Fixture: only 3 posted purchases/fees; pending, declined, payments, and points are skipped."""
     txns = parse_robinhood_csv(FIXTURE)
-    assert len(txns) == 5
+    assert len(txns) == 3
 
 
 def test_parse_detects_fred():
@@ -60,8 +60,10 @@ def test_parse_uses_description_when_available():
     assert "MCDONALD'S F7695" in mcdonalds.description
 
 
-def test_parse_falls_back_to_merchant_for_description():
-    txns = parse_robinhood_csv(FIXTURE)
+def test_parse_falls_back_to_merchant_for_description(tmp_path):
+    posted = tmp_path / "posted.csv"
+    posted.write_text(FIXTURE.read_text().replace("Pending", "Posted"))
+    txns = parse_robinhood_csv(posted)
     starbucks = [t for t in txns if t.merchant == "Starbucks"][0]
     assert starbucks.description == "Starbucks"
 

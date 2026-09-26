@@ -129,3 +129,23 @@ def test_reconcile_unmatched_items_stay_null(db):
     assert matched == 0
     item = db.execute("SELECT * FROM amazon_items WHERE order_number = '999-0000000-0000000'").fetchone()
     assert item["transaction_id"] is None
+
+
+def test_reconcile_does_not_assign_split_order_to_arbitrary_charge(db):
+    seed_all(db)
+    number = "114-1572664-8121843"
+    _insert_chase_txn(db, "first-shipment", number, 10.0)
+    _insert_chase_txn(db, "second-shipment", number, 20.0)
+    store_amazon_orders(db, [AmazonOrder(number, date(2026, 3, 10), 30.0, "fred", [AmazonItem(name="Item")])])
+    assert reconcile_amazon(db) == 0
+    assert db.execute("SELECT transaction_id FROM amazon_items").fetchone()[0] is None
+
+
+def test_reconcile_uses_purchase_not_refund(db):
+    seed_all(db)
+    number = "114-1572664-8121843"
+    _insert_chase_txn(db, "refund", number, -30.0)
+    _insert_chase_txn(db, "purchase", number, 30.0)
+    store_amazon_orders(db, [AmazonOrder(number, date(2026, 3, 10), 30.0, "fred", [AmazonItem(name="Item")])])
+    assert reconcile_amazon(db) == 1
+    assert db.execute("SELECT t.source_id FROM amazon_items i JOIN transactions t ON t.id = i.transaction_id").fetchone()[0] == "purchase"

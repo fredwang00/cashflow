@@ -29,9 +29,11 @@ def parse_apple_card_csv(path: Path) -> list[ParsedTransaction]:
     No sign flip needed.
     """
     transactions = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row_num, row in enumerate(reader, start=2):
+            if None in row or any(value is None for value in row.values()):
+                raise ParseError(path.name, row_num, "column count does not match header")
             try:
                 txn_type = row["Type"].strip()
                 description = row["Description"].strip().strip('"')

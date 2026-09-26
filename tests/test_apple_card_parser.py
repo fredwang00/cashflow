@@ -1,4 +1,8 @@
 from pathlib import Path
+
+import pytest
+
+from cashflow.errors import ParseError
 from cashflow.parsers.apple_card import parse_apple_card_csv
 
 FIXTURE = Path(__file__).parent / "fixtures" / "apple_card_sample.csv"
@@ -66,3 +70,14 @@ def test_parse_correct_count():
     """Fixture: skip payment + skip daily cash = 5 kept (credit, store, 2 wife purchases, installment)."""
     txns = parse_apple_card_csv(FIXTURE)
     assert len(txns) == 5
+
+
+@pytest.mark.parametrize("row", ['02/28/2026,02/28/2026,Store', '02/28/2026,02/28/2026,Store,Store,Other,Purchase,10.00,Fei Wang,extra'])
+def test_malformed_row_reports_file_and_row(tmp_path, row):
+    path = tmp_path / "malformed.csv"
+    path.write_text('Transaction Date,Clearing Date,Description,Merchant,Category,Type,Amount (USD),Purchased By' + "\n" + row + "\n")
+    with pytest.raises(ParseError) as error:
+        parse_apple_card_csv(path)
+    assert error.value.file == "malformed.csv"
+    assert error.value.row == 2
+    assert "column" in error.value.message
