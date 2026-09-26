@@ -7,7 +7,7 @@ def test_create_schema_creates_all_tables():
     create_schema(conn)
     cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = [row[0] for row in cursor.fetchall()]
-    expected = ["accounts", "amazon_items", "budgets", "categories", "goals", "income", "ingest_state", "merchant_rules", "plan_history", "plans", "transactions"]
+    expected = ["accounts", "amazon_items", "budgets", "categories", "goals", "income", "ingest_state", "merchant_rules", "plan_history", "plans", "recurring_reviews", "transactions"]
     assert tables == expected
     conn.close()
 
