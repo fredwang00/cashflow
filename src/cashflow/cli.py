@@ -24,7 +24,7 @@ from cashflow.parsers.expense_report import parse_expense_report
 from cashflow.reimburse import match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.dedup_paypal import link_paypal_to_cards
-from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal
+from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal, get_fsa_candidates
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 from cashflow.plan_cli import plan
 
@@ -742,6 +742,88 @@ def rule_add_category(ctx, name, type):
         click.secho(f"Added category: {name} ({full_type})", fg="green")
     except Exception:
         click.secho(f"Category '{name}' already exists.", fg="yellow")
+
+
+@cli.command()
+@click.option("--year", type=int, default=None, help="Plan year (default: current year).")
+@click.option("--balance", type=float, default=None, help="FSA balance to track against.")
+@click.option("--claim", is_flag=True, help="Interactively mark transactions as claimed.")
+@click.option("--claim-all", is_flag=True, help="Mark all unclaimed candidates as reimbursed.")
+@click.pass_context
+def fsa(ctx, year, balance, claim, claim_all):
+    """Find FSA-reimbursable transactions and track claims."""
+    conn = ctx.obj["conn"]
+    year = year or date.today().year
+    rows = get_fsa_candidates(conn, year)
+
+    if not rows:
+        click.secho(f"No FSA-eligible transactions found for {year}.", fg="yellow")
+        return
+
+    unclaimed = [r for r in rows if not r["is_reimbursed"]]
+    claimed = [r for r in rows if r["is_reimbursed"]]
+    unclaimed_total = sum(r["amount"] for r in unclaimed)
+    claimed_total = sum(r["reimbursed_amount"] for r in claimed)
+
+    if unclaimed:
+        click.echo(f"\n  Unclaimed FSA-eligible transactions ({year}):\n")
+        click.echo(f"  {'ID':>6}  {'Date':<12} {'Amount':>10}  {'Category':<12} {'Merchant':<35} {'Account'}")
+        click.echo(f"  {'-'*100}")
+        for r in unclaimed:
+            cat = r["category"] or "?"
+            click.echo(
+                f"  {r['id']:>6}  {r['date']:<12} ${r['amount']:>9,.2f}  {cat:<12} {r['merchant'][:35]:<35} {r['account']}"
+            )
+        click.echo(f"  {'-'*100}")
+        click.secho(f"  Unclaimed total: ${unclaimed_total:,.2f}  ({len(unclaimed)} transactions)", fg="cyan", bold=True)
+
+    if claimed:
+        click.echo(f"\n  Already claimed:")
+        for r in claimed:
+            click.echo(f"  {r['id']:>6}  {r['date']:<12} ${r['reimbursed_amount']:>9,.2f}  {r['merchant'][:35]}")
+        click.secho(f"  Claimed total: ${claimed_total:,.2f}", fg="green")
+
+    if balance is not None:
+        remaining = balance - claimed_total
+        after_all = remaining - unclaimed_total
+        click.echo()
+        click.secho(f"  FSA balance:     ${balance:>10,.2f}", bold=True)
+        if claimed_total > 0:
+            click.secho(f"  Already claimed: ${claimed_total:>10,.2f}")
+            click.secho(f"  Remaining:       ${remaining:>10,.2f}")
+        click.secho(f"  If all claimed:  ${after_all:>10,.2f} left to spend by Dec 31", fg="yellow" if after_all > 0 else "green")
+
+    click.echo()
+
+    if claim_all and unclaimed:
+        if not click.confirm(f"Mark all {len(unclaimed)} unclaimed transactions (${unclaimed_total:,.2f}) as FSA-reimbursed?"):
+            return
+        ids = [r["id"] for r in unclaimed]
+        conn.execute(
+            f"UPDATE transactions SET is_reimbursed = 1, reimbursed_amount = amount "
+            f"WHERE id IN ({','.join('?' * len(ids))})",
+            ids,
+        )
+        conn.commit()
+        click.secho(f"  Marked {len(ids)} transactions as reimbursed.", fg="green")
+        return
+
+    if claim and unclaimed:
+        marked = 0
+        for r in unclaimed:
+            click.echo(f"\n  {r['date']}  ${r['amount']:>9,.2f}  {r['merchant']}")
+            choice = click.prompt("  [y]es / [n]o / [q]uit", default="y")
+            if choice.lower() == "q":
+                break
+            if choice.lower() == "y":
+                conn.execute(
+                    "UPDATE transactions SET is_reimbursed = 1, reimbursed_amount = amount WHERE id = ?",
+                    (r["id"],),
+                )
+                marked += 1
+        conn.commit()
+        if marked:
+            click.secho(f"\n  Marked {marked} transactions as FSA-reimbursed.", fg="green")
 
 
 @cli.command()
