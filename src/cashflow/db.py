@@ -139,6 +139,12 @@ CREATE TABLE IF NOT EXISTS plan_history (
     new_earliest DATE,
     note TEXT
 );
+CREATE TABLE IF NOT EXISTS recurring_reviews (
+    key TEXT PRIMARY KEY,
+    decision TEXT NOT NULL CHECK (decision IN ('keep', 'cancel', 'ignore')),
+    decided_on DATE NOT NULL,
+    note TEXT
+);
 """
 
 from cashflow.models import ParsedTransaction

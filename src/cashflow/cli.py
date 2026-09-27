@@ -27,6 +27,7 @@ from cashflow.dedup_paypal import link_paypal_to_cards
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal, get_fsa_candidates
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 from cashflow.plan_cli import plan
+from cashflow.audit_cli import audit
 
 PARSERS = {
     "chase": parse_chase_csv, "bofa_cc": parse_bofa_cc_csv,
@@ -845,3 +846,4 @@ def dashboard(ctx, port):
 
 
 cli.add_command(plan)
+cli.add_command(audit)
