@@ -3,7 +3,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
-STATUSES = ("idea", "researching", "planned", "committed", "deferred", "done", "dropped")
+from cashflow.queries import not_savings
+
+STATUSES =("idea", "researching", "planned", "committed", "deferred", "done", "dropped")
 INACTIVE_STATUSES = ("done", "dropped")
 KINDS = ("trip", "home", "vehicle", "purchase", "gift", "other")
 
@@ -280,7 +282,7 @@ def monthly_free_cash(conn: sqlite3.Connection, today: date, months: int = 3) ->
     window = (start.isoformat(), end.isoformat())
     burn = conn.execute(
         "SELECT COALESCE(SUM(amount - reimbursed_amount), 0) FROM transactions "
-        "WHERE canonical_id IS NULL AND is_one_off = 0 AND date >= ? AND date < ?",
+        f"WHERE canonical_id IS NULL AND is_one_off = 0 AND {not_savings()} AND date >= ? AND date < ?",
         window,
     ).fetchone()[0]
     income = conn.execute(

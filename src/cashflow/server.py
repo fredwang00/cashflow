@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from cashflow.db import DEFAULT_DB_PATH
-from cashflow.queries import get_month_spending, get_ytd_spending
+from cashflow.queries import get_month_spending, get_ytd_spending, not_savings
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -95,11 +95,12 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         by_category = conn.execute(
             "SELECT c.name as category, c.type as category_type, ROUND(SUM(t.amount - t.reimbursed_amount), 2) as total "
             "FROM transactions t LEFT JOIN categories c ON t.category_id = c.id "
-            "WHERE t.canonical_id IS NULL AND strftime('%Y', t.date) = ? AND strftime('%m', t.date) = ? "
+            f"WHERE t.canonical_id IS NULL AND {not_savings('t')} "
+            "AND strftime('%Y', t.date) = ? AND strftime('%m', t.date) = ? "
             "GROUP BY c.name ORDER BY total DESC",
             (str(year), f"{month:02d}"),
         ).fetchall()
-        total = sum(t["amount"] - t["reimbursed_amount"] for t in txns)
+        total = get_month_spending(conn, year, month)
         conn.close()
         return {
             "year": year, "month": month, "total": round(total, 2),
@@ -142,11 +143,7 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
         conn = _get_db(db_path)
         months = []
         for mo in range(1, 13):
-            sp = conn.execute(
-                "SELECT COALESCE(SUM(amount - reimbursed_amount), 0) as total FROM transactions "
-                "WHERE canonical_id IS NULL AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
-                (str(year), f"{mo:02d}"),
-            ).fetchone()["total"]
+            sp = get_month_spending(conn, year, mo)
             inc = conn.execute(
                 "SELECT COALESCE(SUM(amount), 0) as total FROM income "
                 "WHERE strftime('%Y', date) = ? AND strftime('%m', date) = ?",
@@ -154,12 +151,14 @@ def create_app(db_path: str = str(DEFAULT_DB_PATH)) -> FastAPI:
             ).fetchone()["total"]
             sp_baseline = conn.execute(
                 "SELECT COALESCE(SUM(amount - reimbursed_amount), 0) as total FROM transactions "
-                "WHERE canonical_id IS NULL AND is_one_off = 0 AND is_reimbursed = 0 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
+                f"WHERE canonical_id IS NULL AND is_one_off = 0 AND is_reimbursed = 0 AND {not_savings()} "
+                "AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
                 (str(year), f"{mo:02d}"),
             ).fetchone()["total"]
             sp_oneoffs = conn.execute(
                 "SELECT COALESCE(SUM(amount - reimbursed_amount), 0) as total FROM transactions "
-                "WHERE canonical_id IS NULL AND is_one_off = 1 AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
+                f"WHERE canonical_id IS NULL AND is_one_off = 1 AND {not_savings()} "
+                "AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
                 (str(year), f"{mo:02d}"),
             ).fetchone()["total"]
             months.append({

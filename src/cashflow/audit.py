@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
+from cashflow.queries import not_savings
+
 DECISIONS = ("keep", "cancel", "ignore")
 NEW_WITHIN_DAYS = 90
 _STALE_AFTER_DAYS = {"monthly": 45, "annual": 400}
@@ -168,7 +170,7 @@ def category_spikes(
         "SELECT c.name AS category, strftime('%Y-%m', t.date) AS month, "
         "SUM(t.amount - t.reimbursed_amount) AS total FROM transactions t "
         "JOIN categories c ON c.id = t.category_id "
-        "WHERE t.canonical_id IS NULL AND t.is_one_off = 0 AND t.date >= ? AND t.date < ? "
+        f"WHERE t.canonical_id IS NULL AND t.is_one_off = 0 AND {not_savings('t')} AND t.date >= ? AND t.date < ? "
         "GROUP BY c.name, month",
         (history[0].isoformat(), _month_start(target + 1).isoformat()),
     ).fetchall()
