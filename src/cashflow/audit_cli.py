@@ -19,7 +19,7 @@ def _row(item: Recurring) -> str:
     )
 
 
-def _alarms(items: list[Recurring]) -> list[tuple[str, str]]:
+def find_alarms(items: list[Recurring]) -> list[tuple[str, str]]:
     alarms = []
     for item in items:
         if item.charged_after_cancel:
@@ -48,7 +48,7 @@ def _show_audit(conn, today: date, show_all: bool) -> None:
     items = find_recurring(conn, today)
     active = [i for i in items if i.active]
 
-    alarms = _alarms(items)
+    alarms = find_alarms(items)
     if alarms:
         click.secho("\nAlarms", bold=True)
         for message, color in alarms:
