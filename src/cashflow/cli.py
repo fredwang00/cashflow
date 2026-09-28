@@ -21,7 +21,7 @@ from cashflow.parsers.amex import parse_amex_csv
 from cashflow.parsers.robinhood import parse_robinhood_csv
 from cashflow.parsers.wells_fargo import parse_wells_fargo_csv
 from cashflow.parsers.expense_report import parse_expense_report
-from cashflow.reimburse import match_expense_report
+from cashflow.reimburse import link_recorded_reimbursements, match_expense_report
 from cashflow.reconcile import store_amazon_orders, reconcile_amazon
 from cashflow.dedup_paypal import link_paypal_to_cards
 from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_queue_count, get_goal, get_fsa_candidates
@@ -217,7 +217,7 @@ def ingest(ctx, files, email, auto, expense_report):
             stored = store_transactions(conn, check_expenses)
             inc_stored = store_income(conn, check_income)
             _record_import(conn, csv_file)
-            click.echo(f"  {stored} new checking expenses; {inc_stored} new income records")
+            click.echo(f"  {stored} new checking transactions (debits and credits); {inc_stored} new income records")
             total += stored + inc_stored
             continue
         if source == "chase" and "freedom" in csv_file.name.lower():
@@ -253,6 +253,10 @@ def ingest(ctx, files, email, auto, expense_report):
     paypal_linked = link_paypal_to_cards(conn)
     if paypal_linked > 0:
         click.echo(f"  PayPal: {paypal_linked} transactions linked to card charges")
+
+    repayments_linked = link_recorded_reimbursements(conn)
+    if repayments_linked > 0:
+        click.echo(f"  Credits: {repayments_linked} matched a reimbursement already recorded, not double-counted")
 
 @cli.command()
 @click.pass_context

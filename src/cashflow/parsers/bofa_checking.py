@@ -33,6 +33,25 @@ INCOME_PATTERNS = [
     (re.compile(r"SPOTIFY USA INC.*(?:DIRECT DEP|PAYROLL)", re.IGNORECASE), "fei_paycheck"),
 ]
 
+# Deposits that only move the household's own money between accounts. Expense
+# reimbursements are skipped too: the expense-report import already nets them
+# against the original charges.
+DEPOSIT_SKIP_PATTERNS = [
+    re.compile(r"MSPBNA\b.*TRNSFR", re.IGNORECASE),
+    re.compile(r"SANTANDER BANK\b.*DES:PAYMENT", re.IGNORECASE),
+    re.compile(r"APPLE CASH\b.*BANK XFER", re.IGNORECASE),
+    re.compile(r"^Transfer PAYPAL", re.IGNORECASE),
+    re.compile(r"PAYPAL\b.*DES:TRANSFER", re.IGNORECASE),
+    re.compile(r"SPOTIFY USA INC.*DES:PAYMENT", re.IGNORECASE),
+]
+
+DEPOSIT_MERCHANT_PATTERNS = [
+    (re.compile(r"BKOFAMERICA (?:MOBILE|ATM)\b.*DEPOSIT", re.IGNORECASE), "Check deposit"),
+    (re.compile(r"Bank of America DES:CASHREWARD", re.IGNORECASE), "BofA Cash Rewards"),
+    (re.compile(r"Virginia Lottery|VI Lottery", re.IGNORECASE), "Virginia Lottery"),
+]
+_ZELLE_FROM = re.compile(r"Zelle payment from (.+?)(?:\s+for\s|\s+Conf#|$)", re.IGNORECASE)
+
 MERCHANT_PATTERNS = [
     (re.compile(r"NEWREZ|SHELLPOIN", re.IGNORECASE), "Newrez Mortgage"),
     (re.compile(r"DOMINION ENERGY", re.IGNORECASE), "Dominion Energy"),
@@ -53,9 +72,24 @@ def _normalize_merchant(description: str) -> str:
     cleaned = re.split(r"\s+DES:", description)[0].strip()
     return cleaned if cleaned else description
 
+def _deposit_merchant(description: str) -> str:
+    zelle = _ZELLE_FROM.search(description)
+    if zelle:
+        return f"Zelle from {zelle.group(1).strip()}"
+    for pattern, name in DEPOSIT_MERCHANT_PATTERNS:
+        if pattern.search(description):
+            return name
+    return _normalize_merchant(description)
+
 def _make_source_id(date_str: str, description: str, amount_str: str) -> str:
     raw = f"{date_str}|{description[:50]}|{amount_str}"
     return f"bofa-chk-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
+
+def _make_credit_source_id(date_str: str, description: str, amount_str: str) -> str:
+    # Hash the full description: same-day credits often differ only by a Zelle Conf#
+    # past character 50. Debits keep the truncated scheme so existing IDs stay stable.
+    raw = f"{date_str}|{description}|{amount_str}"
+    return f"bofa-chk-cr-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 
 def _parse_amount(amount_str: str) -> float:
     return float(amount_str.replace(",", ""))
@@ -98,10 +132,16 @@ def parse_bofa_checking_csv(path: Path) -> tuple[list[ParsedTransaction], list[d
                 income_records.append({"date": txn_date, "amount": amount, "source": income_source, "description": description, "source_id": source_id})
                 continue
             if amount > 0:
-                continue
+                if any(p.search(description) for p in DEPOSIT_SKIP_PATTERNS):
+                    continue
+                # Refunds, repayments, and rewards are stored as credits that offset spending.
+                merchant = _deposit_merchant(description)
+                source_id = _make_credit_source_id(date_str, description, amount_str)
+            else:
+                merchant = _normalize_merchant(description)
             expenses.append(ParsedTransaction(
                 date=txn_date, amount=-amount, description=description,
-                merchant=_normalize_merchant(description),
+                merchant=merchant,
                 source_id=source_id, source_type="csv", account_name="Checking",
             ))
     return expenses, income_records
