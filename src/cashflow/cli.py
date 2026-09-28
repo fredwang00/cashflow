@@ -720,6 +720,19 @@ def rule_set(ctx, pattern, category_name):
         click.secho(f"  Recategorized {updated} transactions.", fg="green")
 
 
+@rule.command("delete")
+@click.argument("pattern")
+@click.pass_context
+def rule_delete(ctx, pattern):
+    """Delete a merchant rule. Already-categorized transactions keep their category."""
+    conn = ctx.obj["conn"]
+    deleted = conn.execute("DELETE FROM merchant_rules WHERE pattern = ?", (pattern,)).rowcount
+    conn.commit()
+    if not deleted:
+        raise click.ClickException(f"No rule with pattern '{pattern}'. See `cashflow rule list`.")
+    click.secho(f"Deleted rule '{pattern}'", fg="green")
+
+
 @rule.command("apply")
 @click.pass_context
 def rule_apply(ctx):

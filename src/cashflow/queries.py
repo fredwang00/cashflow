@@ -1,10 +1,24 @@
 import sqlite3
 from typing import Optional
 
+SAVINGS_CATEGORIES = ("Crypto/Investments", "Investments", "College Savings")
+
+
+def not_savings(alias: str = "") -> str:
+    """SQL condition that keeps money moved into savings or investments out of spending.
+
+    Uncategorized transactions must still count, and `NULL NOT IN (...)` is NULL,
+    so they are matched explicitly.
+    """
+    column = f"{alias}.category_id" if alias else "category_id"
+    names = ", ".join(f"'{name}'" for name in SAVINGS_CATEGORIES)
+    return f"({column} IS NULL OR {column} NOT IN (SELECT id FROM categories WHERE name IN ({names})))"
+
+
 def get_month_spending(conn: sqlite3.Connection, year: int, month: int) -> float:
     row = conn.execute(
         "SELECT COALESCE(SUM(amount - reimbursed_amount), 0.0) as total FROM transactions "
-        "WHERE canonical_id IS NULL AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
+        f"WHERE canonical_id IS NULL AND {not_savings()} AND strftime('%Y', date) = ? AND strftime('%m', date) = ?",
         (str(year), f"{month:02d}"),
     ).fetchone()
     return row["total"]
@@ -12,7 +26,7 @@ def get_month_spending(conn: sqlite3.Connection, year: int, month: int) -> float
 def get_ytd_spending(conn: sqlite3.Connection, year: int) -> float:
     row = conn.execute(
         "SELECT COALESCE(SUM(amount - reimbursed_amount), 0.0) as total FROM transactions "
-        "WHERE canonical_id IS NULL AND strftime('%Y', date) = ?",
+        f"WHERE canonical_id IS NULL AND {not_savings()} AND strftime('%Y', date) = ?",
         (str(year),),
     ).fetchone()
     return row["total"]
