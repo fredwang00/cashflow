@@ -21,6 +21,10 @@ Prefer direct SQL over writing code. Follow [docs/adhoc-queries.md](docs/adhoc-q
 - Charges are **positive**; refunds are negative rows. Income lives in a separate `income` table, not as negative transactions.
 - "Spending" excludes savings/investment categories via `not_savings()` in `queries.py` — match that condition or your numbers won't equal `cashflow status`.
 - Effective cost is `amount - reimbursed_amount`.
+- Vendors appear under many name variants (`TOWN CENTER BARBER SHO` vs `Town Center Barber Shop`) — run the variant-discovery recipe before any vendor query.
+- Before counting two same-amount charges near each other as two real charges, check the `possible_dupes` view (`cashflow dupes`) — cross-source pairs are not linked by `canonical_id`.
+- For questions a human asked conversationally, `cashflow find QUERY --date-from ... --date-to ... --min-amount ... --who ... --account ... --json` covers most cases without SQL.
+- The docs' SQL recipes are validated against the schema by `tests/test_docs_sql.py` — keep new recipes as read-only SELECT/WITH statements in ```sql fences so they stay covered.
 
 ## Gotchas
 

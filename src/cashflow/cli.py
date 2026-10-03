@@ -1,4 +1,5 @@
 import csv
+import json
 import math
 from calendar import monthrange
 import sqlite3
@@ -377,24 +378,61 @@ def review(ctx):
 @cli.command()
 @click.argument("query")
 @click.option("--year", type=int, default=None, help="Filter by year.")
+@click.option("--date-from", default=None, help="Only transactions on/after this date (YYYY-MM-DD).")
+@click.option("--date-to", default=None, help="Only transactions on/before this date (YYYY-MM-DD).")
+@click.option("--min-amount", type=float, default=None, help="Minimum amount (charges positive, refunds negative).")
+@click.option("--max-amount", type=float, default=None, help="Maximum amount.")
+@click.option("--who", type=click.Choice(["fred", "wife", "shared"]), default=None, help="Filter by person.")
+@click.option("--account", default=None, help="Filter by account name substring (e.g. 'Wendy', 'venture').")
 @click.option("--limit", type=int, default=20, help="Max results.")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON (one object per transaction, for scripts).")
 @click.pass_context
-def find(ctx, query, year, limit):
+def find(ctx, query, year, date_from, date_to, min_amount, max_amount, who, account, limit, as_json):
     """Search transactions by merchant or description."""
     conn = ctx.obj["conn"]
+    for label, value in (("--date-from", date_from), ("--date-to", date_to)):
+        if value is not None:
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                raise click.BadParameter("expected YYYY-MM-DD", param_hint=label)
     sql = (
-        "SELECT t.id, t.date, t.amount, t.merchant, t.description, c.name as category "
-        "FROM transactions t LEFT JOIN categories c ON t.category_id = c.id "
+        "SELECT t.id, t.date, t.amount, t.merchant, t.description, "
+        "c.name AS category, a.name AS account, t.who "
+        "FROM transactions t "
+        "LEFT JOIN categories c ON t.category_id = c.id "
+        "LEFT JOIN accounts a ON t.account_id = a.id "
         "WHERE t.canonical_id IS NULL AND (LOWER(t.merchant) LIKE ? OR LOWER(t.description) LIKE ?)"
     )
     params = [f"%{query.lower()}%", f"%{query.lower()}%"]
     if year:
         sql += " AND strftime('%Y', t.date) = ?"
         params.append(str(year))
+    if date_from:
+        sql += " AND t.date >= ?"
+        params.append(date_from)
+    if date_to:
+        sql += " AND t.date <= ?"
+        params.append(date_to)
+    if min_amount is not None:
+        sql += " AND t.amount >= ?"
+        params.append(min_amount)
+    if max_amount is not None:
+        sql += " AND t.amount <= ?"
+        params.append(max_amount)
+    if who:
+        sql += " AND t.who = ?"
+        params.append(who)
+    if account:
+        sql += " AND LOWER(a.name) LIKE ?"
+        params.append(f"%{account.lower()}%")
     sql += " ORDER BY t.date DESC LIMIT ?"
     params.append(limit)
 
     rows = conn.execute(sql, params).fetchall()
+    if as_json:
+        click.echo(json.dumps([dict(r) for r in rows], indent=2))
+        return
     if not rows:
         click.secho(f"No transactions matching '{query}'.", fg="yellow")
         return
@@ -404,6 +442,50 @@ def find(ctx, query, year, limit):
     for r in rows:
         cat = r["category"] or "?"
         click.echo(f"{r['id']:>6}  {r['date']:<12}  ${r['amount']:>9,.2f}  {cat:<20}  {r['merchant'][:30]}")
+
+
+@cli.command()
+@click.option("--all", "show_all", is_flag=True,
+              help="Include same-account pairs (two identical purchases; usually genuine).")
+@click.option("--json", "as_json", is_flag=True, help="Output JSON (one object per pair, for scripts).")
+@click.pass_context
+def dupes(ctx, show_all, as_json):
+    """List likely duplicate charges (same amount, fuzzy merchant, within 3 days).
+
+    By default only cross-account pairs are shown — one purchase recorded by
+    two cards/pipelines, the double-posting signature. Same-account repeats
+    (two genuinely identical purchases) appear with --all. Occurrence-suffix
+    siblings (`-occurrence-N`) are never listed; those are intentional
+    same-day purchases. Advisory review list, not a deletion list.
+    """
+    conn = ctx.obj["conn"]
+    sql = "SELECT * FROM possible_dupes"
+    if not show_all:
+        sql += " WHERE account_a != account_b"
+    sql += " ORDER BY date_a DESC, id_a"
+    rows = conn.execute(sql).fetchall()
+    if as_json:
+        click.echo(json.dumps([dict(r) for r in rows], indent=2))
+        return
+    if not rows:
+        click.secho("No possible duplicate pairs found.", fg="green")
+        return
+
+    scope = "cross-account" if not show_all else "all"
+    click.echo(f"\n{len(rows)} possible duplicate pairs ({scope}, same amount, fuzzy merchant, <=3 days apart):")
+    click.echo(f"\n{'A and B':>13}  {'Dates':<25}  {'Amount':>9}  Merchants")
+    click.echo("-" * 110)
+    for r in rows:
+        ids = f"#{r['id_a']} #{r['id_b']}"
+        dates = f"{r['date_a']} -> {r['date_b']}"
+        click.echo(
+            f"{ids:>13}  {dates:<25}  ${r['amount']:>8,.2f}  "
+            f"{r['merchant_a'][:32]} | {r['merchant_b'][:32]}"
+        )
+        click.echo(
+            f"{'':>13}  accounts: {r['account_a']} / {r['account_b']}"
+            f"  who: {r['who_a']} / {r['who_b']}"
+        )
 
 
 @cli.command()
