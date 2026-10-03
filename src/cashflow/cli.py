@@ -383,7 +383,7 @@ def review(ctx):
 @click.option("--min-amount", type=float, default=None, help="Minimum amount (charges positive, refunds negative).")
 @click.option("--max-amount", type=float, default=None, help="Maximum amount.")
 @click.option("--who", type=click.Choice(["fred", "wife", "shared"]), default=None, help="Filter by person.")
-@click.option("--account", default=None, help="Filter by account name substring (e.g. 'Wendy', 'venture').")
+@click.option("--account", default=None, help="Account name substring; broad substrings match several cards ('capital one' matches all three Cap One buckets).")
 @click.option("--limit", type=int, default=20, help="Max results.")
 @click.option("--json", "as_json", is_flag=True, help="Output JSON (one object per transaction, for scripts).")
 @click.pass_context

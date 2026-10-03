@@ -87,7 +87,8 @@ cashflow find "barber" --date-from 2026-01-01 --date-to 2026-06-30  # date range
 cashflow find "barber" --min-amount 20 --max-amount 60 --who fred  # amount and person
 cashflow find "amazon" --account venture --json   # machine-readable output
 cashflow dupes                               # likely duplicate charges (cross-source pairs)
-cashflow dupes --json                        # same, for scripts
+cashflow dupes --json                        # cross-account pairs as JSON
+cashflow dupes --all                         # include same-account identical repeats
 
 # Tagging & recategorizing
 cashflow find "luvansh"                     # get the transaction ID first
