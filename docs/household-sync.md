@@ -50,6 +50,8 @@ Defer Amazon item enrichment and PayPal unless there is a concrete question they
 
 ## Small automation worth doing next
 
+The [data preservation strategy](data-preservation.md) records the first verified NAS backup and defines snapshot, retention, offsite, and restore procedures. Scheduled backups and migration to the personal Mac mini remain future work.
+
 The useful automation boundary is after downloading, where there are no bank logins or MFA challenges. Header detection, local inbox import, source-ID deduplication and import timestamps now work. A future small wrapper could create a consistent SQLite backup, import the inbox, and print a short exception report. It should stop on parser errors and identity conflicts, and distinguish a successfully read file from verified account/date coverage.
 
 Next most valuable product improvements would be explicit per-account coverage dates and active/occasional/retired states. `MAX(transaction.date)` cannot distinguish inactivity from missing data, and the current BofA bucket cannot represent each card's coverage. These changes need an account-identity design before migrating history.

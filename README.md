@@ -161,6 +161,14 @@ CLI (Click) → parsers → SQLite ← FastAPI → browser dashboard
 
 The database lives in `~/.cashflow/cashflow.db` — outside the repo, never committed.
 
+## Querying the data
+
+- **Direct SQL** — [docs/adhoc-queries.md](docs/adhoc-queries.md) documents the schema, amount/dedup semantics, and copy-paste recipes for common questions (merchant searches, category trends, subscription audits). Open the DB read-only with `sqlite3 -readonly ~/.cashflow/cashflow.db`.
+- **HTTP API** — [docs/api.md](docs/api.md) documents the dashboard server's endpoints (`/api/status`, `/api/monthly/{y}/{m}`, `/api/transactions`, `/api/yearly/{y}`, and the one-off/reimbursement toggles); OpenAPI docs are served at `/docs` while the server runs.
+- **CLI** — `cashflow find "merchant" [--year YYYY] [--limit N]` for quick text searches; `cashflow status` for the burn-rate snapshot.
+
+See [data preservation and recovery](docs/data-preservation.md) for the verified NAS backup, snapshot procedure, restore steps, and planned offsite protection.
+
 ## Running tests
 
 ```bash
