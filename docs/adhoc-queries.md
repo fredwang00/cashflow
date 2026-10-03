@@ -172,7 +172,15 @@ WHERE account_a != account_b
 ORDER BY date_a DESC;
 ```
 
-This is an advisory review list, not a deletion list: legitimate repeats also appear (two tanks of gas, a split dinner), and a flagged pair might be two real charges (e.g. one per subscription seat). Same-account same-amount pairs are usually two genuine purchases — that's why `--all` is opt-in. Confirm against the statements before removing anything; use the CLI for any mutation.
+This is an advisory review list, not a deletion list: legitimate repeats also appear (two tanks of gas, a split dinner), and a flagged pair might be two real charges (e.g. one per subscription seat). Same-account same-amount pairs are usually two genuine purchases — that's why `--all` is opt-in. Confirm against the statements, then remediate confirmed pairs:
+
+```bash
+cashflow dedupe-link 2817 3157     # single pair: 3157 becomes a copy of 2817
+cashflow dedupe-link --from-dupes  # bulk: preview every pair, confirm, link
+cashflow dedupe-unlink 3157        # undo
+```
+
+Bulk mode keeps the earlier-dated charge of each pair (transaction date beats post date), supports the same filters as `find` (`--merchant`, `--account`, `--date-from`, `--date-to`, `--all`), and shows the total that will leave spending totals before asking for confirmation.
 
 ### Visit cadence for a repeating vendor (haircuts, oil changes, …)
 
@@ -264,4 +272,4 @@ SELECT COUNT(*) FROM transactions WHERE canonical_id IS NULL AND status = 'pendi
 
 ## Known data issues
 
-- **Capital One double-ingestion, May–July 2025.** The same charges were ingested through both the statement-PDF pipeline (source prefix `capone-`, mostly bucketed as *Capital One Wendy*) and the CSV export (prefix `capone-csv-`, bucketed as *Capital One Venture*), with 1–2 day date offsets (transaction vs. post date). Verified via `cashflow dupes`: ~140 cross-account pairs, ~$18.7k double-counted; July 2025 alone is overstated ~$3.6k (~15% of that month's reported spending) — the Greece/Turkey trip window (Jul 5–12) is the densest cluster, plus big single pairs like the $7.5k heating charge and $2k Booking.com hotel in May. Mid-2025 monthly totals are overstated until these pairs are canonical-linked. There is no bulk-link command yet; the `cashflow dupes` list is the review queue.
+- **Capital One double-ingestion, May–July 2025.** The same charges were ingested through both the statement-PDF pipeline (source prefix `capone-`, mostly bucketed as *Capital One Wendy*) and the CSV export (prefix `capone-csv-`, bucketed as *Capital One Venture*), with 1–2 day date offsets (transaction vs. post date). Verified via `cashflow dupes`: ~140 cross-account pairs, ~$18.7k double-counted; July 2025 alone is overstated ~$3.6k (~15% of that month's reported spending) — the Greece/Turkey trip window (Jul 5–12) is the densest cluster, plus big single pairs like the $7.5k heating charge and $2k Booking.com hotel in May. Mid-2025 monthly totals are overstated until these pairs are canonical-linked. Remediation: review `cashflow dupes`, then bulk-link the confirmed cluster — `cashflow dedupe-link --from-dupes --account 'capital one' --date-from 2025-05-01 --date-to 2025-07-31` — check the preview (it shows every pair and the total leaving the totals), and confirm. `cashflow dedupe-unlink ID` undoes any link.

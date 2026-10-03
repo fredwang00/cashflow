@@ -23,6 +23,7 @@ Prefer direct SQL over writing code. Follow [docs/adhoc-queries.md](docs/adhoc-q
 - Effective cost is `amount - reimbursed_amount`.
 - Vendors appear under many name variants (`TOWN CENTER BARBER SHO` vs `Town Center Barber Shop`) — run the variant-discovery recipe before any vendor query.
 - Before counting two same-amount charges near each other as two real charges, check the `possible_dupes` view (`cashflow dupes`) — cross-source pairs are not linked by `canonical_id`.
+- Remediate confirmed duplicate pairs with `cashflow dedupe-link` (single pair or `--from-dupes` bulk with filters + preview). Never write `canonical_id` by hand; `cashflow dedupe-unlink` undoes.
 - For questions a human asked conversationally, `cashflow find QUERY --date-from ... --date-to ... --min-amount ... --who ... --account ... --json` covers most cases without SQL.
 - The docs' SQL recipes are validated against the schema by `tests/test_docs_sql.py` — keep new recipes as read-only SELECT/WITH statements in ```sql fences so they stay covered.
 
