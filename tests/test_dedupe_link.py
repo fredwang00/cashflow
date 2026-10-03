@@ -256,7 +256,11 @@ def test_bulk_skips_already_linked_pairs(tmp_path):
     conn.close()
 
 
-def test_bulk_triple_copies_collapse_to_one_survivor(tmp_path):
+def test_bulk_triple_copies_need_second_pass_and_never_chain(tmp_path):
+    """Conservative by design: one pass links one pair of a triple and leaves
+    the third copy canonical (no chains, no over-collapse); a second pass
+    finishes the job."""
+
     def populate(conn):
         a = _txn(conn, "copy-1", "2025-07-06", 32.0, "Transatel Ubigi", _acct(conn, "Amex Gold"))
         b = _txn(conn, "copy-2", "2025-07-07", 32.0, "Transatel Ubigi", _acct(conn, "Robinhood Gold"))
@@ -264,15 +268,75 @@ def test_bulk_triple_copies_collapse_to_one_survivor(tmp_path):
         return a, b, c
 
     db_path, (a, b, c) = _seeded_cli_db(tmp_path, populate)
-    result = CliRunner().invoke(cli, ["--db", str(db_path), "dedupe-link", "--from-dupes", "--yes"])
-    assert result.exit_code == 0
+    first = CliRunner().invoke(cli, ["--db", str(db_path), "dedupe-link", "--from-dupes", "--yes"])
+    assert first.exit_code == 0
+    assert "skipped" in first.output
+
+    conn = sqlite3.connect(str(db_path))
+    survivors = {r[0] for r in conn.execute(
+        "SELECT id FROM transactions WHERE canonical_id IS NULL AND id IN (?, ?, ?)", (a, b, c)
+    ).fetchall()}
+    conn.close()
+    assert survivors == {a, c}  # b linked to a; c deliberately left for review
+
+    # The remaining pair stays visible for a deliberate second pass.
+    dupes = CliRunner().invoke(cli, ["--db", str(db_path), "dupes"])
+    assert dupes.exit_code == 0 and "1 possible duplicate" in dupes.output
+
+    second = CliRunner().invoke(cli, ["--db", str(db_path), "dedupe-link", "--from-dupes", "--yes"])
+    assert second.exit_code == 0
     conn = sqlite3.connect(str(db_path))
     survivors = conn.execute(
         "SELECT id FROM transactions WHERE canonical_id IS NULL AND id IN (?, ?, ?)", (a, b, c)
     ).fetchall()
-    assert len(survivors) == 1
-    assert survivors[0][0] == a  # earliest date survives
+    links = dict(conn.execute(
+        "SELECT id, canonical_id FROM transactions WHERE id IN (?, ?, ?)", (a, b, c)
+    ).fetchall())
     conn.close()
+    assert len(survivors) == 1 and survivors[0][0] == a
+    # Flat links only: every dupe points at the one canonical survivor.
+    assert links[b] == a and links[c] == a and links[a] is None
+
+
+def test_bulk_ambiguous_quad_never_chains(tmp_path):
+    """Regression: the real St. Nicholas quad (2025-06-02). Four $7 copies —
+    two BofA and one Wendy all dated 06-02, one Venture dated 05-31 — used to
+    produce a chain (#2918 -> #1467 -> #3257) because a batch keeper was later
+    linked as a dupe. Now: flat links, two survivors, no chain."""
+
+    def populate(conn):
+        bofa1 = _txn(conn, "bofa-1", "2025-06-02", 7.0, "SQ *ST. NICHOLAS CATHOLICVA BC", _acct(conn, "Bank of America"))
+        bofa2 = _txn(conn, "bofa-2", "2025-06-02", 7.0, "SQ *ST. NICHOLAS CATHOLICVA BC", _acct(conn, "Bank of America"))
+        wendy = _txn(conn, "capone-wendy", "2025-06-02", 7.0, "SQ *ST. NICHOLAS CATHO", _acct(conn, "Capital One Wendy"), who="shared")
+        # Venture copy carries the earlier transaction date, like the real data.
+        venture = _txn(conn, "capone-csv-venture", "2025-05-31", 7.0, "SQ *ST. NICHOLAS CATHOLICVA BC", _acct(conn, "Capital One Venture"))
+        return bofa1, bofa2, wendy, venture
+
+    db_path, (bofa1, bofa2, wendy, venture) = _seeded_cli_db(tmp_path, populate)
+    result = CliRunner().invoke(cli, ["--db", str(db_path), "dedupe-link", "--from-dupes", "--yes"])
+    assert result.exit_code == 0
+
+    conn = sqlite3.connect(str(db_path))
+    rows = dict(conn.execute(
+        "SELECT id, canonical_id FROM transactions WHERE id IN (?, ?, ?, ?)",
+        (bofa1, bofa2, wendy, venture),
+    ).fetchall())
+    conn.close()
+
+    # No chains: every linked dupe points at a row that is itself canonical.
+    for txn_id, canonical in rows.items():
+        if canonical is not None:
+            assert rows[canonical] is None, f"chain: #{txn_id} -> #{canonical} -> #{rows[canonical]}"
+
+    # Exactly two survivors survive for a genuinely ambiguous quad — the batch
+    # deliberately does not collapse four same-amount copies to one.
+    survivors = [i for i, c in rows.items() if c is None]
+    assert len(survivors) == 2
+    # And both keep counting in totals: $14 across the four copies.
+    total = sum(
+        7.0 for i, c in rows.items() if c is None
+    )
+    assert total == 14.0
 
 
 def test_bulk_same_account_needs_all_flag(tmp_path):
