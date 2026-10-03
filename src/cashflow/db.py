@@ -145,6 +145,28 @@ CREATE TABLE IF NOT EXISTS recurring_reviews (
     decided_on DATE NOT NULL,
     note TEXT
 );
+DROP VIEW IF EXISTS possible_dupes;
+CREATE VIEW possible_dupes AS
+SELECT a.id AS id_a, b.id AS id_b,
+       a.date AS date_a, b.date AS date_b,
+       a.amount AS amount,
+       CAST(ABS(julianday(b.date) - julianday(a.date)) AS INTEGER) AS days_apart,
+       a.merchant AS merchant_a, b.merchant AS merchant_b,
+       acct_a.name AS account_a, acct_b.name AS account_b,
+       a.source_id AS source_a, b.source_id AS source_b,
+       a.who AS who_a, b.who AS who_b
+FROM transactions a
+JOIN transactions b ON a.id < b.id
+JOIN accounts acct_a ON a.account_id = acct_a.id
+JOIN accounts acct_b ON b.account_id = acct_b.id
+WHERE a.canonical_id IS NULL AND b.canonical_id IS NULL
+  AND a.amount > 0 AND b.amount > 0
+  AND ABS(a.amount - b.amount) < 0.011
+  AND ABS(julianday(a.date) - julianday(b.date)) <= 3
+  AND SUBSTR(REPLACE(UPPER(a.merchant), ' ', ''), 1, 10)
+    = SUBSTR(REPLACE(UPPER(b.merchant), ' ', ''), 1, 10)
+  AND b.source_id NOT LIKE a.source_id || '-occurrence-%'
+  AND a.source_id NOT LIKE b.source_id || '-occurrence-%';
 """
 
 from cashflow.models import ParsedTransaction

@@ -83,7 +83,11 @@ cashflow rule apply                   # Re-run all rules on pending transactions
 # Search
 cashflow find "marriott"                    # search by merchant or description
 cashflow find "kroger" --year 2025          # filter by year
-cashflow find "amazon" --limit 5            # show fewer results
+cashflow find "barber" --date-from 2026-01-01 --date-to 2026-06-30  # date range
+cashflow find "barber" --min-amount 20 --max-amount 60 --who fred  # amount and person
+cashflow find "amazon" --account venture --json   # machine-readable output
+cashflow dupes                               # likely duplicate charges (cross-source pairs)
+cashflow dupes --json                        # same, for scripts
 
 # Tagging & recategorizing
 cashflow find "luvansh"                     # get the transaction ID first
@@ -165,7 +169,7 @@ The database lives in `~/.cashflow/cashflow.db` — outside the repo, never comm
 
 - **Direct SQL** — [docs/adhoc-queries.md](docs/adhoc-queries.md) documents the schema, amount/dedup semantics, and copy-paste recipes for common questions (merchant searches, category trends, subscription audits). Open the DB read-only with `sqlite3 -readonly ~/.cashflow/cashflow.db`.
 - **HTTP API** — [docs/api.md](docs/api.md) documents the dashboard server's endpoints (`/api/status`, `/api/monthly/{y}/{m}`, `/api/transactions`, `/api/yearly/{y}`, and the one-off/reimbursement toggles); OpenAPI docs are served at `/docs` while the server runs.
-- **CLI** — `cashflow find "merchant" [--year YYYY] [--limit N]` for quick text searches; `cashflow status` for the burn-rate snapshot.
+- **CLI** — `cashflow find "merchant" [--date-from YYYY-MM-DD] [--date-to YYYY-MM-DD] [--min-amount N] [--max-amount N] [--who fred|wife|shared] [--account NAME] [--year YYYY] [--json]` for ad hoc questions; `cashflow dupes` lists possible duplicate charges; `cashflow status` for the burn-rate snapshot. Every SQL recipe in docs/adhoc-queries.md is validated against the schema by `tests/test_docs_sql.py`.
 
 See [data preservation and recovery](docs/data-preservation.md) for the verified NAS backup, snapshot procedure, restore steps, and planned offsite protection.
 
