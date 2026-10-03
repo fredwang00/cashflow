@@ -89,14 +89,14 @@ def test_audit_alarms_when_cancelled_charge_returns(run, db_path):
 
 def test_new_charge_raises_only_the_new_alarm():
     from cashflow.audit import Recurring
-    from cashflow.audit_cli import _alarms
+    from cashflow.audit_cli import find_alarms
     uber = Recurring(
         key="uber one membership", label="UBER *ONE MEMBERSHIP", category="Auto", cadence="monthly",
         count=3, first_seen=date(2026, 7, 16), last_seen=date(2026, 9, 16), amount=4.40,
         latest_amount=4.55, price_increase=0.81, active=True, is_new=True,
         decision=None, decided_on=None, charged_after_cancel=None,
     )
-    [(message, _)] = _alarms([uber])
+    [(message, _)] = find_alarms([uber])
     assert "new recurring charge" in message
 
 

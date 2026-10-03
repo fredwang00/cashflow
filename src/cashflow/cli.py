@@ -28,6 +28,7 @@ from cashflow.queries import get_month_spending, get_ytd_surplus, get_review_que
 from cashflow.categorize import categorize_by_rules, categorize_by_llm, confirm_transaction, get_pending_for_review
 from cashflow.plan_cli import plan
 from cashflow.audit_cli import audit
+from cashflow.daily_note import daily_note_fields, update_frontmatter
 
 PARSERS = {
     "chase": parse_chase_csv, "bofa_cc": parse_bofa_cc_csv,
@@ -257,6 +258,24 @@ def ingest(ctx, files, email, auto, expense_report):
     repayments_linked = link_recorded_reimbursements(conn)
     if repayments_linked > 0:
         click.echo(f"  Credits: {repayments_linked} matched a reimbursement already recorded, not double-counted")
+
+@cli.command("daily-note")
+@click.option("--dir", "daily_dir", type=click.Path(file_okay=False, path_type=Path),
+              default=Path.home() / "Documents/clearwater/daily", show_default=True,
+              help="Folder of YYYY-MM-DD.md daily notes.")
+@click.option("--date", "day", help="Note date (YYYY-MM-DD). Defaults to today.")
+@click.pass_context
+def daily_note(ctx, daily_dir, day):
+    """Write spending, free cash, and alarms into the daily note's frontmatter."""
+    today = date.fromisoformat(day) if day else date.today()
+    note = daily_dir / f"{today.isoformat()}.md"
+    if not note.exists():
+        # The morning job creates the note from its template; creating it here would skip the template.
+        click.echo(f"No daily note at {note} yet, skipping.")
+        return
+    fields = daily_note_fields(ctx.obj["conn"], today)
+    note.write_text(update_frontmatter(note.read_text(), fields))
+    click.echo(f"Updated {note}: " + ", ".join(f"{k}={v}" for k, v in fields.items()))
 
 @cli.command()
 @click.pass_context

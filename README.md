@@ -71,6 +71,7 @@ cashflow ingest --auto                # Import local ~/cashflow/inbox/ exports
 
 # Status
 cashflow status                       # Burn rate + YTD surplus snapshot
+cashflow daily-note                   # Same numbers + audit alarms into today's clearwater daily note
 
 # Review & categorize
 cashflow review                       # Interactive review queue
