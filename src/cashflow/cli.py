@@ -456,7 +456,8 @@ def dupes(ctx, show_all, as_json):
     two cards/pipelines, the double-posting signature. Same-account repeats
     (two genuinely identical purchases) appear with --all. Occurrence-suffix
     siblings (`-occurrence-N`) are never listed; those are intentional
-    same-day purchases. Advisory review list, not a deletion list.
+    same-day purchases. Advisory review list, not a deletion list:
+    remediate confirmed pairs with `cashflow dedupe-link`.
     """
     conn = ctx.obj["conn"]
     sql = "SELECT * FROM possible_dupes"
@@ -486,6 +487,162 @@ def dupes(ctx, show_all, as_json):
             f"{'':>13}  accounts: {r['account_a']} / {r['account_b']}"
             f"  who: {r['who_a']} / {r['who_b']}"
         )
+
+
+@cli.command("dedupe-link")
+@click.argument("keep_id", type=int, required=False, default=None)
+@click.argument("dupe_id", type=int, required=False, default=None)
+@click.option("--from-dupes", is_flag=True, help="Bulk mode: link pairs from the possible_dupes view (cross-account by default).")
+@click.option("--all", "show_all", is_flag=True, help="Bulk mode: include same-account pairs.")
+@click.option("--merchant", default=None, help="Bulk: only pairs where either merchant matches this substring.")
+@click.option("--account", default=None, help="Bulk: only pairs where either account name matches this substring.")
+@click.option("--date-from", default=None, help="Bulk: only pairs on/after this date (YYYY-MM-DD, by the earlier charge).")
+@click.option("--date-to", default=None, help="Bulk: only pairs on/before this date (YYYY-MM-DD, by the earlier charge).")
+@click.option("--yes", is_flag=True, help="Bulk: skip the confirmation prompt.")
+@click.pass_context
+def dedupe_link(ctx, keep_id, dupe_id, from_dupes, show_all, merchant, account, date_from, date_to, yes):
+    """Mark duplicate charges: DUPE becomes a copy of KEEP and stops counting in totals.
+
+    Single pair:  cashflow dedupe-link 2817 3157    (3157 linked to 2817)
+
+    Bulk mode reviews pairs from `cashflow dupes`, keeps the earlier-dated
+    charge of each pair (lower id breaks ties), links the later one, and
+    asks for confirmation before writing. Filters narrow the set; pairs
+    already linked are skipped. Undo with `cashflow dedupe-unlink`.
+    """
+    conn = ctx.obj["conn"]
+
+    if not from_dupes:
+        if keep_id is None or dupe_id is None:
+            raise click.ClickException("provide two transaction IDs (KEEP DUPE), or use --from-dupes for bulk mode")
+        _link_single(conn, keep_id, dupe_id)
+        return
+
+    if keep_id is not None or dupe_id is not None:
+        raise click.ClickException("transaction IDs cannot be combined with --from-dupes")
+    for label, value in (("--date-from", date_from), ("--date-to", date_to)):
+        if value is not None:
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                raise click.BadParameter("expected YYYY-MM-DD", param_hint=label)
+
+    sql = "SELECT * FROM possible_dupes WHERE 1=1"
+    params = []
+    if not show_all:
+        sql += " AND account_a != account_b"
+    if merchant:
+        sql += " AND (LOWER(merchant_a) LIKE ? OR LOWER(merchant_b) LIKE ?)"
+        params += [f"%{merchant.lower()}%", f"%{merchant.lower()}%"]
+    if account:
+        sql += " AND (LOWER(account_a) LIKE ? OR LOWER(account_b) LIKE ?)"
+        params += [f"%{account.lower()}%", f"%{account.lower()}%"]
+    if date_from:
+        sql += " AND date_a >= ?"
+        params.append(date_from)
+    if date_to:
+        sql += " AND date_a <= ?"
+        params.append(date_to)
+    sql += " ORDER BY date_a, id_a"
+    pairs = conn.execute(sql, params).fetchall()
+
+    plans, skipped = [], 0
+    planned_dupes = set()  # ids already scheduled as dupes earlier in this batch
+    for p in pairs:
+        if p["id_a"] in planned_dupes or p["id_b"] in planned_dupes:
+            skipped += 1
+            continue
+        a = conn.execute("SELECT id, date, canonical_id FROM transactions WHERE id = ?", (p["id_a"],)).fetchone()
+        b = conn.execute("SELECT id, date, canonical_id FROM transactions WHERE id = ?", (p["id_b"],)).fetchone()
+        if a["canonical_id"] is not None or b["canonical_id"] is not None:
+            skipped += 1
+            continue
+        keep_side = "a" if p["date_a"] <= p["date_b"] else "b"
+        keep_id_, dupe_id_ = (p["id_a"], p["id_b"]) if keep_side == "a" else (p["id_b"], p["id_a"])
+        planned_dupes.add(dupe_id_)
+        plans.append({
+            "keep": keep_id_,
+            "dupe": dupe_id_,
+            "dupe_date": p["date_b"] if keep_side == "a" else p["date_a"],
+            "dupe_merchant": p["merchant_b"] if keep_side == "a" else p["merchant_a"],
+            "dupe_account": p["account_b"] if keep_side == "a" else p["account_a"],
+            "keep_account": p["account_a"] if keep_side == "a" else p["account_b"],
+            "amount": p["amount"],
+        })
+
+    if not plans:
+        if skipped:
+            click.secho(f"No linkable pairs ({skipped} handled earlier in this batch; the view already hides linked pairs).", fg="yellow")
+        else:
+            click.secho("No matching pairs to link.", fg="yellow")
+        return
+
+    scope = "cross-account" if not show_all else "all"
+    click.echo(f"\n{len(plans)} pairs to link ({scope}), keeping the earlier-dated charge:")
+    for p in plans:
+        click.echo(
+            f"  link #{p['dupe']} -> keep #{p['keep']}   {p['dupe_date']}   ${p['amount']:>9,.2f}  "
+            f"{p['dupe_merchant'][:30]}   ({p['dupe_account']} -> {p['keep_account']})"
+        )
+    if skipped:
+        click.echo(f"  ({skipped} pairs skipped: already linked, or handled earlier in this batch)")
+    click.echo(f"\nSpending totals will drop by ${sum(p['amount'] for p in plans):,.2f} once linked.")
+
+    if not yes and not click.confirm(f"Link {len(plans)} pairs?"):
+        click.echo("No changes made.")
+        return
+
+    for p in plans:
+        conn.execute("UPDATE transactions SET canonical_id = ? WHERE id = ?", (p["keep"], p["dupe"]))
+    conn.commit()
+    click.secho(f"Linked {len(plans)} duplicate charges.", fg="green")
+    click.echo("Run `cashflow dupes` to confirm the pairs no longer appear; `cashflow dedupe-unlink` undoes.")
+
+
+def _link_single(conn, keep_id, dupe_id):
+    if keep_id == dupe_id:
+        raise click.ClickException("a transaction cannot be linked to itself")
+    keep = conn.execute("SELECT * FROM transactions WHERE id = ?", (keep_id,)).fetchone()
+    dupe = conn.execute("SELECT * FROM transactions WHERE id = ?", (dupe_id,)).fetchone()
+    if not keep:
+        raise click.ClickException(f"Transaction {keep_id} not found")
+    if not dupe:
+        raise click.ClickException(f"Transaction {dupe_id} not found")
+    if keep["canonical_id"] is not None:
+        raise click.ClickException(
+            f"#{keep_id} is itself a linked duplicate of #{keep['canonical_id']}; link to the surviving row"
+        )
+    relinked = dupe["canonical_id"] is not None
+    conn.execute("UPDATE transactions SET canonical_id = ? WHERE id = ?", (keep_id, dupe_id))
+    conn.commit()
+    was = f" (was linked to #{dupe['canonical_id']})" if relinked else ""
+    click.secho(
+        f"#{dupe_id} {dupe['merchant']} on {dupe['date']} ${dupe['amount']:,.2f} "
+        f"linked to #{keep_id}{was} — excluded from totals now",
+        fg="green",
+    )
+
+
+@cli.command("dedupe-unlink")
+@click.argument("dupe_ids", type=int, nargs=-1, required=True)
+@click.pass_context
+def dedupe_unlink(ctx, dupe_ids):
+    """Undo dedupe-link: these linked duplicates become normal charges again."""
+    conn = ctx.obj["conn"]
+    unlinked = 0
+    for txn_id in dupe_ids:
+        txn = conn.execute("SELECT * FROM transactions WHERE id = ?", (txn_id,)).fetchone()
+        if not txn:
+            raise click.ClickException(f"Transaction {txn_id} not found")
+        if txn["canonical_id"] is None:
+            click.secho(f"#{txn_id} is not a linked duplicate, skipping.", fg="yellow")
+            continue
+        conn.execute("UPDATE transactions SET canonical_id = NULL WHERE id = ?", (txn_id,))
+        unlinked += 1
+        click.secho(f"#{txn_id} unlinked (was a copy of #{txn['canonical_id']}).", fg="green")
+    conn.commit()
+    if unlinked:
+        click.secho(f"{unlinked} transaction(s) count in totals again.", fg="green")
 
 
 @cli.command()

@@ -89,6 +89,9 @@ cashflow find "amazon" --account venture --json   # machine-readable output
 cashflow dupes                               # likely duplicate charges (cross-source pairs)
 cashflow dupes --json                        # cross-account pairs as JSON
 cashflow dupes --all                         # include same-account identical repeats
+cashflow dedupe-link 2817 3157               # mark 3157 a duplicate of 2817 (stops counting)
+cashflow dedupe-link --from-dupes            # preview + bulk-link pairs from `dupes`
+cashflow dedupe-unlink 3157                  # undo a link
 
 # Tagging & recategorizing
 cashflow find "luvansh"                     # get the transaction ID first
