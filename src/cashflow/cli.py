@@ -547,9 +547,15 @@ def dedupe_link(ctx, keep_id, dupe_id, from_dupes, show_all, merchant, account, 
     pairs = conn.execute(sql, params).fetchall()
 
     plans, skipped = [], 0
-    planned_dupes = set()  # ids already scheduled as dupes earlier in this batch
+    # Ids already scheduled in this batch, as keeper or dupe. A pair sharing
+    # a row with a scheduled pair is skipped: linking a keeper as a dupe
+    # would build chains (dupe -> dupe), and collapsing a cluster further
+    # (e.g. four $7 copies, or three genuine $32 eSIM charges) is exactly
+    # the over-linking the view is too fuzzy to decide. Skipped pairs stay
+    # in `cashflow dupes` for a second pass or individual links.
+    planned_keepers, planned_dupes = set(), set()
     for p in pairs:
-        if p["id_a"] in planned_dupes or p["id_b"] in planned_dupes:
+        if {p["id_a"], p["id_b"]} & (planned_keepers | planned_dupes):
             skipped += 1
             continue
         a = conn.execute("SELECT id, date, canonical_id FROM transactions WHERE id = ?", (p["id_a"],)).fetchone()
@@ -559,6 +565,7 @@ def dedupe_link(ctx, keep_id, dupe_id, from_dupes, show_all, merchant, account, 
             continue
         keep_side = "a" if p["date_a"] <= p["date_b"] else "b"
         keep_id_, dupe_id_ = (p["id_a"], p["id_b"]) if keep_side == "a" else (p["id_b"], p["id_a"])
+        planned_keepers.add(keep_id_)
         planned_dupes.add(dupe_id_)
         plans.append({
             "keep": keep_id_,
@@ -597,6 +604,12 @@ def dedupe_link(ctx, keep_id, dupe_id, from_dupes, show_all, merchant, account, 
     conn.commit()
     click.secho(f"Linked {len(plans)} duplicate charges.", fg="green")
     click.echo("Run `cashflow dupes` to confirm the pairs no longer appear; `cashflow dedupe-unlink` undoes.")
+    if skipped:
+        click.secho(
+            f"{skipped} pairs were skipped and remain in `cashflow dupes` — "
+            "link them individually or run --from-dupes again for a second pass.",
+            fg="yellow",
+        )
 
 
 def _link_single(conn, keep_id, dupe_id):
