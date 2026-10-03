@@ -55,7 +55,7 @@ Spending numbers deliberately exclude money moved into savings/investments. The 
 SELECT t.id, t.date, t.amount, t.merchant
 FROM transactions t
 WHERE t.canonical_id IS NULL
-  AND amount > 0
+  AND t.amount > 0
   AND (t.category_id IS NULL OR t.category_id NOT IN
        (SELECT id FROM categories WHERE name IN ('Crypto/Investments','Investments','College Savings')));
 ```
@@ -127,6 +127,8 @@ Or skip SQL entirely with the CLI filters:
 cashflow find "suspect-merchant" --date-from 2026-08-01 --date-to 2026-09-30 --json
 cashflow find "barber" --min-amount 20 --max-amount 60 --who fred --account venture
 ```
+
+Note `--account` is a substring match: `capital one` matches all three Capital One buckets (`Capital One`, `Capital One Venture`, `Capital One Wendy`) — use `venture` or `wendy` to pick one card.
 
 ### Discover merchant variants before querying a vendor
 
@@ -259,3 +261,7 @@ SELECT COUNT(*) FROM transactions WHERE canonical_id IS NULL AND status = 'pendi
 - **`accounts` are buckets**, not physical cards (all BofA cards share one), so account freshness can't prove each card is current.
 - **Vendors are spelled many ways** (`TOWN CENTER BARBER SHO` vs `Town Center Barber Shop`). Run the variant-discovery recipe above before any vendor query, or filter with the normalized merchant key.
 - Write nothing by hand unless you understand the dedup/snapshot rules in [data-preservation.md](data-preservation.md); prefer the CLI (`cashflow tag`, `cashflow recategorize`, `cashflow rule set`) for mutations.
+
+## Known data issues
+
+- **Capital One double-ingestion, May–July 2025.** The same charges were ingested through both the statement-PDF pipeline (source prefix `capone-`, mostly bucketed as *Capital One Wendy*) and the CSV export (prefix `capone-csv-`, bucketed as *Capital One Venture*), with 1–2 day date offsets (transaction vs. post date). Verified via `cashflow dupes`: ~140 cross-account pairs, ~$18.7k double-counted; July 2025 alone is overstated ~$3.6k (~15% of that month's reported spending) — the Greece/Turkey trip window (Jul 5–12) is the densest cluster, plus big single pairs like the $7.5k heating charge and $2k Booking.com hotel in May. Mid-2025 monthly totals are overstated until these pairs are canonical-linked. There is no bulk-link command yet; the `cashflow dupes` list is the review queue.
