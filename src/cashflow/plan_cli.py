@@ -1,9 +1,12 @@
 import functools
+import os
 import sqlite3
 from datetime import date
+from pathlib import Path
 
 import click
 
+from cashflow import plan_sync
 from cashflow.plans import (
     KINDS,
     STATUSES,
@@ -70,12 +73,14 @@ def _range(line: PlanLine) -> str:
     return f"{_money(line.cost_low)}–{line.cost_high:,.0f}"
 
 
-def _title(line: PlanLine) -> str:
+def _title(line: PlanLine, today: date) -> str:
     title = f"  ↳ {line.title}" if line.depth else line.title
     if line.pick_one:
         title += " (pick one)"
     if line.necessity:
         title += " [need]"
+    if line.revisit and line.revisit <= today:
+        title += " [revisit]"
     return title
 
 
@@ -117,7 +122,7 @@ def _show_plans(conn: sqlite3.Connection) -> None:
         when = line.earliest.strftime("%Y-%m") if line.earliest and not line.depth else ""
         probability = f"{line.probability:.2g}" if line.probability is not None else ""
         row = (
-            f"{_title(line)[:38]:<38} {_status(line) if not line.depth else '':<12} {when:<8} "
+            f"{_title(line, today)[:38]:<38} {_status(line) if not line.depth else '':<12} {when:<8} "
             f"{_range(line):<16} {probability:>4} {_optional_money(line.expected):>10} "
             f"{_money(line.cumulative_expected) if line.cumulative_expected is not None else '':>10} "
         )
@@ -137,6 +142,21 @@ def _show_plans(conn: sqlite3.Connection) -> None:
     if summary.unpriced:
         names = ", ".join(line.slug for line in summary.unpriced)
         click.secho(f"\nNeeds estimate (not in totals): {names}", fg="yellow")
+    paid = [l for l in summary.lines if l.paid]
+    if paid:
+        click.echo("\nAlready paid (left out of expected and gap): "
+                   + ", ".join(f"{l.slug} {_money(l.paid)}" for l in paid))
+    points = [l for l in summary.lines if l.points_needed]
+    if points:
+        click.echo("Points: " + ", ".join(
+            f"{l.slug} {l.points_needed:,} {l.points_program or ''}".rstrip() for l in points))
+    if summary.due:
+        click.secho("\nDue for a go/no-go:", fg="yellow", bold=True)
+        for line in summary.due:
+            source = f"  ({line.source_path})" if line.source_path else ""
+            click.secho(f"  {line.slug}: revisit {line.revisit.isoformat()}{source}", fg="yellow")
+            for criterion in line.go_no_go:
+                click.echo(f"    - {criterion}")
 
 
 @plan.command("add")
@@ -206,3 +226,45 @@ def plan_defer(ctx, slug, until, note):
     """Defer a plan to a later start (YYYY-MM)."""
     defer_plan(ctx.obj["conn"], slug, until, note=note)
     click.secho(f"{slug} deferred to {until.isoformat()}", fg="green")
+
+
+DEFAULT_VAULT = Path.home() / "Documents" / "clearwater"
+
+
+def _describe(change: plan_sync.Change) -> str:
+    if change.action == "add":
+        return f"+ {change.card.slug} ({change.card.status})"
+    parts = [f"{k}: {old!r} → {new!r}" for k, (old, new) in change.fields.items()
+             if k not in ("source_path",)]
+    if change.status:
+        parts.insert(0, f"status: {change.status[0]} → {change.status[1]}" + (" (deferral)" if change.deferred else ""))
+    elif change.deferred:
+        parts.insert(0, "deferred again")
+    return f"~ {change.card.slug}: " + "; ".join(parts or ["source moved"])
+
+
+@plan.command("sync")
+@click.option("--root", type=click.Path(file_okay=False, exists=True, path_type=Path),
+              default=lambda: Path(os.environ.get("CASHFLOW_VAULT", DEFAULT_VAULT)), show_default="~/Documents/clearwater",
+              help="Folder to scan for Markdown files with a `plan:` card in their frontmatter.")
+@click.option("--dry-run", is_flag=True, help="Show what would change without writing.")
+@click.pass_context
+def plan_sync_cmd(ctx, root, dry_run):
+    """Update plans from `plan:` cards in project docs (the doc is the source of truth)."""
+    conn = ctx.obj["conn"]
+    cards, errors = plan_sync.find_cards(root)
+    result = plan_sync.diff(conn, cards)
+    for error in errors:
+        click.secho(f"! {error}", fg="red")
+    for change in result.changes:
+        click.echo(_describe(change))
+    for slug in result.orphaned:
+        click.secho(f"? {slug}: its card is gone; set a status by hand (done/dropped) if that's intended", fg="yellow")
+    summary = f"{len(cards)} cards, {len(result.changes)} changes, {len(result.unchanged)} unchanged"
+    if dry_run or not result.changes:
+        click.echo(summary + (" (dry run)" if dry_run else ""))
+    else:
+        plan_sync.apply(conn, result)
+        click.secho(summary + ", applied", fg="green")
+    if errors:
+        raise click.ClickException(f"{len(errors)} card(s) skipped; fix them and sync again")

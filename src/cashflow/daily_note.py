@@ -5,7 +5,7 @@ from datetime import date
 
 from cashflow.audit import find_recurring
 from cashflow.audit_cli import find_alarms
-from cashflow.plans import monthly_free_cash
+from cashflow.plans import monthly_free_cash, summarize
 from cashflow.queries import get_goal, get_month_spending, get_review_queue_count
 
 DEFAULT_CEILING = 12000.0
@@ -15,12 +15,18 @@ def daily_note_fields(conn: sqlite3.Connection, today: date) -> dict[str, object
     """Cashflow state for the daily note's frontmatter, one line per key."""
     ceiling = get_goal(conn, "ceiling")
     alarms = find_alarms(find_recurring(conn, today))
+    free = monthly_free_cash(conn, today).free
+    plans = summarize(conn, today=today, monthly_free=free)
+    short = plans.first_gap
     return {
         "spend_mtd": round(get_month_spending(conn, today.year, today.month)),
         "spend_ceiling": round(ceiling["amount"] if ceiling else DEFAULT_CEILING),
-        "free_cash": round(monthly_free_cash(conn, today).free),
+        "free_cash": round(free),
         "review_queue": get_review_queue_count(conn),
         "cash_alarms": " | ".join(message for message, _ in alarms),
+        # First plan that free cash can't cover by its start, and the cumulative shortfall there.
+        "plans_gap": f"{short.slug} -${short.gap:,.0f} by {short.earliest:%Y-%m}" if short else "",
+        "plans_due": ", ".join(line.slug for line in plans.due),
     }
 
 

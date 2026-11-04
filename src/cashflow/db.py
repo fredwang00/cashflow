@@ -22,6 +22,25 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE transactions ADD COLUMN reimbursed_amount REAL NOT NULL DEFAULT 0")
         conn.execute("UPDATE transactions SET reimbursed_amount = amount WHERE is_reimbursed = 1")
         conn.commit()
+    _migrate_plans(conn)
+
+# Columns plan cards (clearwater frontmatter) carry beyond the original planning queue.
+PLAN_CARD_COLUMNS = {
+    "source_path": "TEXT",
+    "paid": "REAL NOT NULL DEFAULT 0",
+    "revisit": "DATE",
+    "go_no_go": "TEXT",
+    "points_program": "TEXT",
+    "points_needed": "INTEGER",
+}
+
+def _migrate_plans(conn: sqlite3.Connection) -> None:
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(plans)").fetchall()}
+    missing = [(name, ddl) for name, ddl in PLAN_CARD_COLUMNS.items() if name not in cols]
+    for name, ddl in missing:
+        conn.execute(f"ALTER TABLE plans ADD COLUMN {name} {ddl}")
+    if missing:
+        conn.commit()
 
 def create_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_SQL)
@@ -127,7 +146,13 @@ CREATE TABLE IF NOT EXISTS plans (
     earliest DATE,
     latest DATE,
     necessity BOOLEAN NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source_path TEXT,
+    paid REAL NOT NULL DEFAULT 0,
+    revisit DATE,
+    go_no_go TEXT,
+    points_program TEXT,
+    points_needed INTEGER
 );
 CREATE TABLE IF NOT EXISTS plan_history (
     id INTEGER PRIMARY KEY,

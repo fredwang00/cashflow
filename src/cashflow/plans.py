@@ -1,5 +1,6 @@
+import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
@@ -29,6 +30,12 @@ class PlanLine:
     times_deferred: int
     cumulative_expected: Optional[float] = None
     gap: Optional[float] = None
+    paid: float = 0.0
+    revisit: Optional[date] = None
+    go_no_go: list[str] = field(default_factory=list)
+    points_program: Optional[str] = None
+    points_needed: Optional[int] = None
+    source_path: Optional[str] = None
 
 
 @dataclass
@@ -37,6 +44,13 @@ class PlanSummary:
     expected_total: float
     worst_total: float
     unpriced: list[PlanLine]
+    due: list[PlanLine] = field(default_factory=list)
+
+    @property
+    def first_gap(self) -> Optional[PlanLine]:
+        """The earliest plan that free cash can't cover by its start: where the money runs out."""
+        gaps = [l for l in self.lines if l.depth == 0 and l.gap and l.earliest]
+        return min(gaps, key=lambda l: l.earliest) if gaps else None
 
 
 @dataclass
@@ -181,13 +195,17 @@ def _to_date(value: Optional[str]) -> Optional[date]:
 
 
 def _leaf_estimate(row) -> tuple[Optional[float], Optional[float]]:
+    """Expected and worst-case cash still to come; money already paid is not future cash."""
     low, high, probability = row["cost_low"], row["cost_high"], row["probability"]
     if low is None or high is None:
         return None, None
-    worst = high if probability is None or probability > 0 else None
+    paid = row["paid"] or 0
+    remaining_high = max(0.0, high - paid)
+    remaining_mid = max(0.0, (low + high) / 2 - paid)
+    worst = remaining_high if probability is None or probability > 0 else None
     if probability is None:
         return None, worst
-    return probability * (low + high) / 2, worst
+    return probability * remaining_mid, worst
 
 
 def _line(row, depth, expected, worst, times_deferred, earliest=None) -> PlanLine:
@@ -197,6 +215,10 @@ def _line(row, depth, expected, worst, times_deferred, earliest=None) -> PlanLin
         cost_low=row["cost_low"], cost_high=row["cost_high"], probability=row["probability"],
         earliest=earliest or _to_date(row["earliest"]), latest=_to_date(row["latest"]),
         expected=expected, worst=worst, times_deferred=times_deferred,
+        paid=row["paid"] or 0.0, revisit=_to_date(row["revisit"]),
+        go_no_go=json.loads(row["go_no_go"]) if row["go_no_go"] else [],
+        points_program=row["points_program"], points_needed=row["points_needed"],
+        source_path=row["source_path"],
     )
 
 
@@ -263,11 +285,13 @@ def summarize(
             line.cumulative_expected = cumulative
             line.gap = max(0.0, cumulative - available)
 
+    due = [l for l in lines if today is not None and l.revisit is not None and l.revisit <= today]
     return PlanSummary(
         lines=lines,
         expected_total=sum(l.expected for l in top_level if l.expected is not None),
         worst_total=sum(l.worst for l in top_level if l.worst is not None),
         unpriced=unpriced,
+        due=due,
     )
 
 
