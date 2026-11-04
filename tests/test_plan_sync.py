@@ -208,7 +208,7 @@ def test_due_plans_and_first_gap(conn, vault):
     _sync(conn, vault)
     summary = summarize(conn, today=date(2027, 1, 20), monthly_free=1000)
     assert [l.slug for l in summary.due] == ["minivan"]
-    assert summary.first_gap.slug == "minivan"  # dated by its earliest option (2027-03), before China (2027-06)
+    assert summary.first_gap.slug == "minivan-2027"  # the 2027 option (2027-03) comes before China (2027-06)
 
 
 def test_existing_database_gets_plan_card_columns(tmp_path):
@@ -232,7 +232,7 @@ def test_daily_note_fields_include_plans(conn, vault):
     _sync(conn, vault)
     fields = daily_note_fields(conn, date(2027, 1, 20))
     assert fields["plans_due"] == "minivan"
-    assert fields["plans_gap"].startswith("minivan -$")  # no income in the test db, so the first plan is short
+    assert fields["plans_gap"].startswith("minivan-2027 -$")  # no income in the test db, so the first plan is short
     assert "by 2027-03" in fields["plans_gap"]
 
 
@@ -258,3 +258,18 @@ def test_cli_sync_fails_loudly_on_bad_cards_but_applies_good_ones(tmp_path, vaul
     assert result.exit_code != 0
     assert "bad.md" in result.output
     assert get_connection(tmp_path / "cli.db").execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 5
+
+
+def test_pick_one_options_land_on_their_own_dates_in_the_gap(conn, vault):
+    path = vault / "projects/home/sienna/decision.md"
+    path.write_text(MINIVAN.replace("p: 0.4", "p: 0.05").replace("p: 0.6", "p: 0.95"))
+    _sync(conn, vault)
+    summary = summarize(conn, today=date(2026, 11, 4), monthly_free=0)
+    by_slug = {l.slug: l for l in summary.lines}
+    assert by_slug["minivan-2027"].cumulative_expected == pytest.approx(0.05 * 53000)
+    # China (June 2027) sits between the two options; only 5% of the van counts before it
+    assert by_slug["china-2027"].cumulative_expected == pytest.approx(0.05 * 53000 + (21700 + 29500) / 2 - 8026)
+    assert by_slug["minivan-2028"].cumulative_expected == pytest.approx(
+        by_slug["china-2027"].cumulative_expected + 0.95 * 53000)
+    slugs = [l.slug for l in summary.lines if l.depth == 0]
+    assert slugs.index("minivan") < slugs.index("china-2027")  # parent sorts by its earliest option

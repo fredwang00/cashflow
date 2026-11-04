@@ -49,7 +49,7 @@ class PlanSummary:
     @property
     def first_gap(self) -> Optional[PlanLine]:
         """The earliest plan that free cash can't cover by its start: where the money runs out."""
-        gaps = [l for l in self.lines if l.depth == 0 and l.gap and l.earliest]
+        gaps = [l for l in self.lines if l.gap and l.earliest]
         return min(gaps, key=lambda l: l.earliest) if gaps else None
 
 
@@ -222,6 +222,17 @@ def _line(row, depth, expected, worst, times_deferred, earliest=None) -> PlanLin
     )
 
 
+def _children_of(parent: PlanLine, lines: list[PlanLine]) -> list[PlanLine]:
+    """Alternatives listed directly after a pick-one parent (summarize emits them in that order)."""
+    start = next(i for i, line in enumerate(lines) if line is parent) + 1
+    kids = []
+    for line in lines[start:]:
+        if line.depth == 0:
+            break
+        kids.append(line)
+    return kids
+
+
 def _months_between(start: date, end: date) -> int:
     return (end.year - start.year) * 12 + end.month - start.month
 
@@ -277,9 +288,24 @@ def summarize(
             if expected is None:
                 unpriced.append(line)
 
+    blocks = [[top, *(_children_of(top, lines) if top.pick_one else [])] for top in top_level]
+    blocks.sort(key=lambda b: (b[0].earliest is None, b[0].earliest or date.max))
+    lines = [line for block in blocks for line in block]
+
     if today is not None and monthly_free is not None:
+        # Each pick-one alternative lands on its own date at its own weight, so a 5%/95% 2027-vs-2028
+        # choice doesn't put the whole cost in 2027.
+        timeline = []
+        for line in top_level:
+            kids = _children_of(line, lines) if line.pick_one else []
+            if kids:
+                timeline += [k for k in kids if k.earliest or line.earliest]
+                for k in kids:
+                    k.earliest = k.earliest or line.earliest
+            elif line.earliest:
+                timeline.append(line)
         cumulative = 0.0
-        for line in sorted((l for l in top_level if l.earliest), key=lambda l: l.earliest):
+        for line in sorted(timeline, key=lambda l: l.earliest):
             cumulative += line.expected or 0
             available = max(0, _months_between(today, line.earliest)) * monthly_free
             line.cumulative_expected = cumulative
