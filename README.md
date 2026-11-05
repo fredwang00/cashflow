@@ -71,7 +71,13 @@ cashflow ingest --auto                # Import local ~/cashflow/inbox/ exports
 
 # Status
 cashflow status                       # Burn rate + YTD surplus snapshot
-cashflow daily-note                   # Same numbers + audit alarms into today's clearwater daily note
+cashflow daily-note                   # Same numbers, audit alarms, plans_gap/plans_due into today's clearwater daily note
+
+# Plans (medium/long-term spending weighed against free cash)
+cashflow plan                         # Queue: expected cost, cumulative, funding gap, go/no-go due
+cashflow plan sync --dry-run          # Preview changes from `plan:` cards in clearwater project docs
+cashflow plan sync                    # Apply them (the doc is the source of truth)
+cashflow plan add / set / status / defer   # Hand edits for plans without a card
 
 # Review & categorize
 cashflow review                       # Interactive review queue
@@ -125,6 +131,31 @@ Month navigation updates all views including the burn rate card.
 
 ## Setup
 
+### Plan cards
+
+A project doc in the clearwater vault declares its plan in YAML frontmatter; `cashflow plan sync`
+scans the vault (`--root`, `CASHFLOW_VAULT`, default `~/Documents/clearwater`) and upserts by slug.
+Status changes and later start dates are recorded in `plan_history`, so repeated deferrals show up
+as `deferred×N`. A card that disappears is reported, never deleted.
+
+```yaml
+plan:
+  slug: china-2027                 # lowercase-with-dashes, unique across the vault
+  title: China + Hong Kong family trip
+  kind: trip                       # trip | home | vehicle | purchase | gift | other
+  status: committed                # idea | researching | planned | committed | deferred | done | dropped
+  cost: 21.7k-29.5k                # amount, "low-high" (k ok), or [low, high]
+  p: 1                             # probability it happens
+  window: 2027-06                  # earliest start, or [earliest, latest]
+  paid: 8026                       # already spent; only the rest counts against future free cash
+  revisit: 2027-02-01              # go/no-go date; shows in `cashflow plan` and the daily note when due
+  go_no_go: [Passports renewed, Visas approved]
+  points: {program: wf, needed: 136k}   # optional: points the plan spends instead of cash
+```
+
+A pick-one decision puts mutually exclusive alternatives under `options:` (each with its own
+`slug`, `cost`, `p`, `window`; `kind` is inherited). Option probabilities must sum to at most 1.
+
 ### Environment variables
 
 ```bash
@@ -143,7 +174,7 @@ See `.env.example` for provider templates. `.env` is not automatically loaded: e
 pip install -e ".[dev]"
 ```
 
-Python 3.12+, FastAPI, uvicorn, httpx, Click, openpyxl, Chart.js (CDN).
+Python 3.12+, FastAPI, uvicorn, httpx, Click, openpyxl, PyYAML, Chart.js (CDN).
 
 ## Categorization
 

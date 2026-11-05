@@ -1,5 +1,6 @@
+import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
@@ -29,6 +30,12 @@ class PlanLine:
     times_deferred: int
     cumulative_expected: Optional[float] = None
     gap: Optional[float] = None
+    paid: float = 0.0
+    revisit: Optional[date] = None
+    go_no_go: list[str] = field(default_factory=list)
+    points_program: Optional[str] = None
+    points_needed: Optional[int] = None
+    source_path: Optional[str] = None
 
 
 @dataclass
@@ -37,6 +44,13 @@ class PlanSummary:
     expected_total: float
     worst_total: float
     unpriced: list[PlanLine]
+    due: list[PlanLine] = field(default_factory=list)
+
+    @property
+    def first_gap(self) -> Optional[PlanLine]:
+        """The earliest plan that free cash can't cover by its start: where the money runs out."""
+        gaps = [l for l in self.lines if l.gap and l.earliest]
+        return min(gaps, key=lambda l: l.earliest) if gaps else None
 
 
 @dataclass
@@ -181,13 +195,17 @@ def _to_date(value: Optional[str]) -> Optional[date]:
 
 
 def _leaf_estimate(row) -> tuple[Optional[float], Optional[float]]:
+    """Expected and worst-case cash still to come; money already paid is not future cash."""
     low, high, probability = row["cost_low"], row["cost_high"], row["probability"]
     if low is None or high is None:
         return None, None
-    worst = high if probability is None or probability > 0 else None
+    paid = row["paid"] or 0
+    remaining_high = max(0.0, high - paid)
+    remaining_mid = max(0.0, (low + high) / 2 - paid)
+    worst = remaining_high if probability is None or probability > 0 else None
     if probability is None:
         return None, worst
-    return probability * (low + high) / 2, worst
+    return probability * remaining_mid, worst
 
 
 def _line(row, depth, expected, worst, times_deferred, earliest=None) -> PlanLine:
@@ -197,7 +215,22 @@ def _line(row, depth, expected, worst, times_deferred, earliest=None) -> PlanLin
         cost_low=row["cost_low"], cost_high=row["cost_high"], probability=row["probability"],
         earliest=earliest or _to_date(row["earliest"]), latest=_to_date(row["latest"]),
         expected=expected, worst=worst, times_deferred=times_deferred,
+        paid=row["paid"] or 0.0, revisit=_to_date(row["revisit"]),
+        go_no_go=json.loads(row["go_no_go"]) if row["go_no_go"] else [],
+        points_program=row["points_program"], points_needed=row["points_needed"],
+        source_path=row["source_path"],
     )
+
+
+def _children_of(parent: PlanLine, lines: list[PlanLine]) -> list[PlanLine]:
+    """Alternatives listed directly after a pick-one parent (summarize emits them in that order)."""
+    start = next(i for i, line in enumerate(lines) if line is parent) + 1
+    kids = []
+    for line in lines[start:]:
+        if line.depth == 0:
+            break
+        kids.append(line)
+    return kids
 
 
 def _months_between(start: date, end: date) -> int:
@@ -255,19 +288,36 @@ def summarize(
             if expected is None:
                 unpriced.append(line)
 
+    blocks = [[top, *(_children_of(top, lines) if top.pick_one else [])] for top in top_level]
+    blocks.sort(key=lambda b: (b[0].earliest is None, b[0].earliest or date.max))
+    lines = [line for block in blocks for line in block]
+
     if today is not None and monthly_free is not None:
+        # Each pick-one alternative lands on its own date at its own weight, so a 5%/95% 2027-vs-2028
+        # choice doesn't put the whole cost in 2027.
+        timeline = []
+        for line in top_level:
+            kids = _children_of(line, lines) if line.pick_one else []
+            if kids:
+                timeline += [k for k in kids if k.earliest or line.earliest]
+                for k in kids:
+                    k.earliest = k.earliest or line.earliest
+            elif line.earliest:
+                timeline.append(line)
         cumulative = 0.0
-        for line in sorted((l for l in top_level if l.earliest), key=lambda l: l.earliest):
+        for line in sorted(timeline, key=lambda l: l.earliest):
             cumulative += line.expected or 0
             available = max(0, _months_between(today, line.earliest)) * monthly_free
             line.cumulative_expected = cumulative
             line.gap = max(0.0, cumulative - available)
 
+    due = [l for l in lines if today is not None and l.revisit is not None and l.revisit <= today]
     return PlanSummary(
         lines=lines,
         expected_total=sum(l.expected for l in top_level if l.expected is not None),
         worst_total=sum(l.worst for l in top_level if l.worst is not None),
         unpriced=unpriced,
+        due=due,
     )
 
 
