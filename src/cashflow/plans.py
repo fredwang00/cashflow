@@ -36,6 +36,7 @@ class PlanLine:
     points_program: Optional[str] = None
     points_needed: Optional[int] = None
     source_path: Optional[str] = None
+    next_step: Optional[str] = None
 
 
 @dataclass
@@ -45,6 +46,16 @@ class PlanSummary:
     worst_total: float
     unpriced: list[PlanLine]
     due: list[PlanLine] = field(default_factory=list)
+
+    @property
+    def next_up(self) -> Optional[PlanLine]:
+        """The one next step to offer today: needs before wants, then whatever is due or starts soonest."""
+        candidates = [l for l in self.lines if l.depth == 0 and l.next_step]
+        if not candidates:
+            return None
+        due = {id(l) for l in self.due}
+        return min(candidates, key=lambda l: (
+            not l.necessity, id(l) not in due, l.revisit or date.max, l.earliest or date.max))
 
     @property
     def first_gap(self) -> Optional[PlanLine]:
@@ -218,7 +229,7 @@ def _line(row, depth, expected, worst, times_deferred, earliest=None) -> PlanLin
         paid=row["paid"] or 0.0, revisit=_to_date(row["revisit"]),
         go_no_go=json.loads(row["go_no_go"]) if row["go_no_go"] else [],
         points_program=row["points_program"], points_needed=row["points_needed"],
-        source_path=row["source_path"],
+        source_path=row["source_path"], next_step=row["next_step"],
     )
 
 

@@ -17,6 +17,7 @@ Card format (in any Markdown file's YAML frontmatter):
       revisit: 2027-02-01
       go_no_go: ["Passports renewed", "Visas approved"]
       points: {program: wf, needed: 136000}
+      next: Book the Hong Kong Hyatt with Chase points   # a 10-minute first step, no decisions
 
 A pick-one plan lists mutually exclusive alternatives under `options:`; each option takes
 the same fields and inherits `kind` from the parent.
@@ -37,7 +38,7 @@ FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\s*(?:\n|\Z)", re.DOTALL)
 SKIP_DIRS = {".git", ".obsidian", ".trash", "node_modules", "tmp"}
 SYNCED_FIELDS = (
     "title", "kind", "parent_id", "pick_one", "necessity", "cost_low", "cost_high", "probability",
-    "earliest", "latest", "paid", "revisit", "go_no_go", "points_program", "points_needed", "source_path",
+    "earliest", "latest", "paid", "revisit", "go_no_go", "points_program", "points_needed", "source_path", "next_step",
 )
 
 
@@ -65,6 +66,7 @@ class Card:
     points_program: Optional[str] = None
     points_needed: Optional[int] = None
     source_path: Optional[str] = None
+    next_step: Optional[str] = None
 
 
 @dataclass
@@ -157,6 +159,9 @@ def _card(data: dict, source: str, parent: Optional[dict] = None) -> Card:
     points = data.get("points") or {}
     if not isinstance(points, dict):
         raise CardError(f"{slug}: points must be a mapping like {{program: wf, needed: 136000}}")
+    next_step = data.get("next")
+    if next_step is not None and not isinstance(next_step, str):
+        raise CardError(f"{slug}: next must be one line of text")
     cost_low, cost_high = _cost(data.get("cost"))
     earliest, latest = _window(data.get("window"))
     return Card(
@@ -178,6 +183,7 @@ def _card(data: dict, source: str, parent: Optional[dict] = None) -> Card:
         points_program=points.get("program"),
         points_needed=int(_amount(points["needed"])) if points.get("needed") is not None else None,
         source_path=source,
+        next_step=next_step.strip() if next_step else None,
     )
 
 

@@ -27,6 +27,8 @@ def daily_note_fields(conn: sqlite3.Connection, today: date) -> dict[str, object
         # First plan that free cash can't cover by its start, and the cumulative shortfall there.
         "plans_gap": f"{short.slug} -${short.gap:,.0f} by {short.earliest:%Y-%m}" if short else "",
         "plans_due": ", ".join(line.slug for line in plans.due),
+        # One small step to offer today; do it or skip it.
+        "plans_next": f"{plans.next_up.slug}: {plans.next_up.next_step}" if plans.next_up else "",
     }
 
 

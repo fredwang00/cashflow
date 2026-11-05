@@ -32,6 +32,7 @@ PLAN_CARD_COLUMNS = {
     "go_no_go": "TEXT",
     "points_program": "TEXT",
     "points_needed": "INTEGER",
+    "next_step": "TEXT",
 }
 
 def _migrate_plans(conn: sqlite3.Connection) -> None:
@@ -152,7 +153,8 @@ CREATE TABLE IF NOT EXISTS plans (
     revisit DATE,
     go_no_go TEXT,
     points_program TEXT,
-    points_needed INTEGER
+    points_needed INTEGER,
+    next_step TEXT
 );
 CREATE TABLE IF NOT EXISTS plan_history (
     id INTEGER PRIMARY KEY,

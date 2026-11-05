@@ -273,3 +273,35 @@ def test_pick_one_options_land_on_their_own_dates_in_the_gap(conn, vault):
         by_slug["china-2027"].cumulative_expected + 0.95 * 53000)
     slugs = [l.slug for l in summary.lines if l.depth == 0]
     assert slugs.index("minivan") < slugs.index("china-2027")  # parent sorts by its earliest option
+
+
+def test_next_step_syncs_and_daily_note_offers_needs_first(conn, vault):
+    europe = vault / "europe.md"
+    europe.write_text(EUROPE.replace("  p: 0.6\n", "  p: 0.6\n  next: Open Iberia Plus accounts\n"))
+    minivan = vault / "projects/home/sienna/decision.md"
+    minivan.write_text(MINIVAN.replace("  necessity: true\n", "  necessity: true\n  next: Note the Odyssey mileage\n"))
+    _sync(conn, vault)
+    summary = summarize(conn, today=date(2026, 11, 4), monthly_free=0)
+    assert summary.next_up.slug == "minivan"  # a need beats a want even though Europe has a step too
+    fields = daily_note_fields(conn, date(2026, 11, 4))
+    assert fields["plans_next"] == "minivan: Note the Odyssey mileage"
+    # changing the step is a normal update
+    minivan.write_text(minivan.read_text().replace("Note the Odyssey mileage", "Book the inspection"))
+    result = _sync(conn, vault)
+    assert [c.fields["next_step"][1] for c in result.changes] == ["Book the inspection"]
+
+
+def test_next_up_is_empty_without_steps(conn, vault):
+    _sync(conn, vault)
+    assert summarize(conn, today=date(2026, 11, 4)).next_up is None
+    assert daily_note_fields(conn, date(2026, 11, 4))["plans_next"] == ""
+
+
+def test_cli_lists_next_steps_with_todays_marked(tmp_path, vault):
+    (vault / "europe.md").write_text(EUROPE.replace("  p: 0.6\n", "  p: 0.6\n  next: Open Iberia Plus accounts\n"))
+    db_path = str(tmp_path / "cli.db")
+    runner = CliRunner()
+    runner.invoke(cli, ["--db", db_path, "plan", "sync", "--root", str(vault)])
+    view = runner.invoke(cli, ["--db", db_path, "plan"])
+    assert "Next steps:" in view.output
+    assert "→ europe-2028: Open Iberia Plus accounts" in view.output

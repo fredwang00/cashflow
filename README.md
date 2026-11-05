@@ -151,7 +151,11 @@ plan:
   revisit: 2027-02-01              # go/no-go date; shows in `cashflow plan` and the daily note when due
   go_no_go: [Passports renewed, Visas approved]
   points: {program: wf, needed: 136k}   # optional: points the plan spends instead of cash
+  next: Book the Hong Kong Hyatt with Chase points   # 10-minute first step, no decisions needed
 ```
+
+`next` feeds `plans_next` in the daily note: one step per day, needs before wants, then whatever is
+due for a go/no-go or starts soonest. Update the card's `next` when it's done.
 
 A pick-one decision puts mutually exclusive alternatives under `options:` (each with its own
 `slug`, `cost`, `p`, `window`; `kind` is inherited). Option probabilities must sum to at most 1.

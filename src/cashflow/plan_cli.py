@@ -150,6 +150,13 @@ def _show_plans(conn: sqlite3.Connection) -> None:
     if points:
         click.echo("Points: " + ", ".join(
             f"{l.slug} {l.points_needed:,} {l.points_program or ''}".rstrip() for l in points))
+    steps = [l for l in summary.lines if l.next_step]
+    if steps:
+        up = summary.next_up
+        click.echo("\nNext steps:")
+        for line in steps:
+            marker = "→" if line is up else " "
+            click.echo(f" {marker} {line.slug}: {line.next_step}")
     if summary.due:
         click.secho("\nDue for a go/no-go:", fg="yellow", bold=True)
         for line in summary.due:
